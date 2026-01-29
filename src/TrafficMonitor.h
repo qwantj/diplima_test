@@ -17,5 +17,4 @@ public:
 
 private:
   pcpp::PcapLiveDevice* device_;
-  bool running_;
 };

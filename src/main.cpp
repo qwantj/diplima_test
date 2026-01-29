@@ -2,8 +2,6 @@
 #include <QMainWindow>
 #include <QStatusBar>
 
-#include "TrafficMonitor.h"
-
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
 
@@ -12,8 +10,6 @@ int main(int argc, char* argv[]) {
   window.resize(1024, 768);
   window.statusBar()->showMessage(QStringLiteral("Ready"));
   window.show();
-
-  TrafficMonitor monitor;
 
   return app.exec();
 }

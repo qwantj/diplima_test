@@ -4,15 +4,19 @@
 #include <PcapLiveDeviceList.h>
 
 TrafficMonitor::TrafficMonitor()
-  : device_(nullptr), running_(false) {}
+  : device_(nullptr) {}
 
 TrafficMonitor::~TrafficMonitor() {
   stop();
 }
 
 bool TrafficMonitor::start(const std::string& interfaceName) {
-  if (running_) {
-    return true;
+  if (interfaceName.empty()) {
+    return false;
+  }
+
+  if (device_ && device_->isOpened()) {
+    return false;
   }
 
   device_ = pcpp::PcapLiveDeviceList::getInstance().getPcapLiveDeviceByName(interfaceName);
@@ -25,7 +29,6 @@ bool TrafficMonitor::start(const std::string& interfaceName) {
     return false;
   }
 
-  running_ = true;
   return true;
 }
 
@@ -34,9 +37,8 @@ void TrafficMonitor::stop() {
     device_->close();
   }
   device_ = nullptr;
-  running_ = false;
 }
 
 bool TrafficMonitor::isRunning() const {
-  return running_;
+  return device_ != nullptr && device_->isOpened();
 }
