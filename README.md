@@ -25,7 +25,11 @@ Recommended steps:
    - `vcpkg install pcapplusplus:x64-mingw-static`
    - `vcpkg install onnxruntime:x64-mingw-static` (optional, for ML inference)
 4. Configure CMake:
-   - `cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_PREFIX_PATH=C:/Qt/6.6.2/mingw_64`
+  - ```
+    cmake -S . -B build -G "MinGW Makefiles" ^
+      -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+      -DCMAKE_PREFIX_PATH=C:/Qt/6.6.2/mingw_64
+    ```
 
 ## MinGW runtime note
 
