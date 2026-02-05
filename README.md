@@ -31,6 +31,9 @@ Recommended steps:
       -DCMAKE_PREFIX_PATH=C:/Qt/6.6.2/mingw_64
     ```
 
+For a detailed walkthrough with screenshots and `Qt6_DIR` verification, see
+[`docs/windows-setup.md`](docs/windows-setup.md).
+
 ## MinGW runtime note
 
 CMake enables `ENABLE_PORTABLE_RUNTIME` to add `-static-libgcc -static-libstdc++` for MinGW builds.
