@@ -2,9 +2,9 @@
   <rect width="100%" height="100%" fill="#f7f7f7"/>
   <rect x="40" y="40" width="880" height="460" fill="#ffffff" stroke="#c7c7c7" stroke-width="2"/>
   <text x="80" y="110" font-family="Segoe UI, Arial" font-size="28" fill="#333">Qt Online Installer — Component Selection</text>
-  <text x="80" y="170" font-family="Segoe UI, Arial" font-size="20" fill="#555">Select: Qt 6.x.x → MinGW 64-bit</text>
+  <text x="80" y="170" font-family="Segoe UI, Arial" font-size="20" fill="#555">Select: Qt 6.6.2 → MinGW 64-bit</text>
   <rect x="80" y="210" width="360" height="36" fill="#e8f1ff" stroke="#7aa7ff"/>
-  <text x="95" y="235" font-family="Segoe UI, Arial" font-size="16" fill="#333">☑ Qt 6.x.x → MinGW 64-bit</text>
+  <text x="95" y="235" font-family="Segoe UI, Arial" font-size="16" fill="#333">☑ Qt 6.6.2 → MinGW 64-bit</text>
   <rect x="80" y="260" width="360" height="36" fill="#fef6e0" stroke="#f0c15b"/>
   <text x="95" y="285" font-family="Segoe UI, Arial" font-size="16" fill="#333">☑ Qt Charts (optional)</text>
 </svg>
