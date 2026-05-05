@@ -1,0 +1,39 @@
+# Build directories
+build/
+build_*/
+out/
+x64/
+Debug/
+Release/
+
+# Logs and debug files
+*.log
+collector_debug.txt
+build_log*.txt
+build_error*.txt
+security_events.csv
+
+# PCAP dumps
+pcap_dumps/
+
+# Python virtual environment
+scripts/venv/
+
+# Large datasets
+datasets/
+scripts/results.txt
+
+# IDE files
+.vscode/
+_codeql_detected_source_root
+*.user
+*.suo
+*.sln
+*.vcxproj
+*.filters
+
+# Keep important text files
+!README.md
+!CMakeLists.txt
+!scripts/requirements.txt
+!interfaces.txt
