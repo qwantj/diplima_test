@@ -10,9 +10,19 @@ ModelInferencer::ModelInferencer() {
 
 ModelInferencer::~ModelInferencer() { unloadModel(); }
 
+std::string ModelInferencer::modelName() const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    return modelName_;
+}
+
+std::string ModelInferencer::modelPath() const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    return modelPath_;
+}
+
 bool ModelInferencer::loadModel(const std::string& modelPath, const std::string& ep) {
 #ifdef ONNX_RUNTIME_AVAILABLE
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::shared_mutex> lock(mutex_);
     try {
         sessionOptions_ = std::make_unique<Ort::SessionOptions>();
         sessionOptions_->SetIntraOpNumThreads(1);
@@ -67,7 +77,7 @@ bool ModelInferencer::loadModel(const std::string& modelPath, const std::string&
 
 void ModelInferencer::unloadModel() {
 #ifdef ONNX_RUNTIME_AVAILABLE
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::shared_mutex> lock(mutex_);
     session_.reset();
     sessionOptions_.reset();
     inputNames_.clear();
@@ -79,6 +89,7 @@ void ModelInferencer::unloadModel() {
 
 bool ModelInferencer::isLoaded() const {
 #ifdef ONNX_RUNTIME_AVAILABLE
+    std::shared_lock<std::shared_mutex> lock(mutex_);
     return session_ != nullptr;
 #else
     return false;
@@ -87,7 +98,7 @@ bool ModelInferencer::isLoaded() const {
 
 std::pair<int, float> ModelInferencer::predict(const std::vector<float>& features) {
 #ifdef ONNX_RUNTIME_AVAILABLE
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::shared_lock<std::shared_mutex> lock(mutex_);
     if (!session_) return {0, 0.0f};
 
     try {

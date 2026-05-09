@@ -5,6 +5,9 @@
 #include <QMutex>
 #include <QString>
 #include <deque>
+#include <vector>
+#include <atomic>
+#include "concurrentqueue.h"
 
 class FileBuffer {
 public:
@@ -18,6 +21,7 @@ public:
 
 private:
     QString filePath_;
-    std::deque<QByteArray> buffer_;
-    mutable QMutex mutex_;
+    moodycamel::ConcurrentQueue<QByteArray> buffer_;
+    std::atomic<int> size_{0};
+    mutable QMutex fileMutex_; // Only for file writing, memory buffer is lock-free
 };
