@@ -311,6 +311,31 @@ void DashboardWidget::setupDashboard() {
     ppsChartView_ = new InteractiveChartView(ppsChart_, this);
     ppsChartView_->setRenderHint(QPainter::Antialiasing);
     connect(ppsChartView_, &InteractiveChartView::userInteracted, this, &DashboardWidget::onUserInteracted);
+
+    auto* chartControlsLayout = new QHBoxLayout();
+    auto* resetZoomBtn = new QPushButton("Reset Zoom");
+    resetZoomBtn->setStyleSheet("background: #313244; color: #cdd6f4; border-radius: 4px; padding: 4px 12px;");
+    connect(resetZoomBtn, &QPushButton::clicked, this, &DashboardWidget::resetZoom);
+    chartControlsLayout->addStretch();
+    chartControlsLayout->addWidget(resetZoomBtn);
+
+    connect(timeAxis_, &QDateTimeAxis::rangeChanged, [this](QDateTime min, QDateTime max) {
+        if (!userInteracting_) return;
+        double maxPps = 1.0;
+        for (auto series : ppsChart_->series()) {
+            if (auto* lineSeries = qobject_cast<QLineSeries*>(series)) {
+                if (lineSeries == attackConfidenceUpper_ || lineSeries == attackConfidenceArea_->upperSeries() || lineSeries == attackConfidenceArea_->lowerSeries()) continue;
+                for (auto& pt : lineSeries->points()) {
+                    if (pt.x() >= min.toMSecsSinceEpoch() && pt.x() <= max.toMSecsSinceEpoch()) {
+                        maxPps = std::max(maxPps, pt.y());
+                    }
+                }
+            }
+        }
+        ppsAxis_->setRange(0, maxPps * 1.2);
+    });
+
+    layout->addLayout(chartControlsLayout);
     layout->addWidget(ppsChartView_, 1);
 
     // 3. Donuts Bottom
