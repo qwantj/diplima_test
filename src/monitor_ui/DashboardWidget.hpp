@@ -4,13 +4,16 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QCheckBox>
 #include <QPushButton>
 #include <QTimer>
+#include <QTableWidget>
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QAreaSeries>
+#include <QtCharts/QScatterSeries>
 #include <QtCharts/QDateTimeAxis>
 #include <QtCharts/QValueAxis>
 #include <QtCharts/QPieSeries>
@@ -26,34 +29,40 @@
 #include "common/SystemMetricsCollector.hpp"
 #include "monitor_ui/ThemePalette.hpp"
 
-// --- Helper widgets defined in header ---
-
 class HeatmapWidget : public QWidget {
     Q_OBJECT
 public:
     explicit HeatmapWidget(QWidget* parent = nullptr);
-    void setData(const std::map<uint16_t, uint64_t>& portData);
+    void addData(const QDateTime& time, const std::map<uint16_t, uint64_t>& portData);
 protected:
     void paintEvent(QPaintEvent*) override;
 private:
-    std::vector<std::pair<uint16_t, double>> data_;
+    struct Point { QDateTime t; uint16_t port; double intensity; };
+    std::deque<Point> points_;
+    QDateTime minTime_, maxTime_;
+};
+
+class NetworkTopologyWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit NetworkTopologyWidget(QWidget* parent = nullptr);
+    void updateTopology(const std::vector<std::pair<std::string, uint64_t>>& targets, double ingressMbps);
+protected:
+    void paintEvent(QPaintEvent*) override;
+private:
+    std::vector<std::pair<std::string, uint64_t>> targets_;
+    double ingressMbps_ = 0;
 };
 
 class AlertGridWidget : public QWidget {
     Q_OBJECT
 public:
     explicit AlertGridWidget(QWidget* parent = nullptr);
-    void updateMetrics(double pps, int label, float confidence, double cpuPercent, double ramPercent);
+    void addHealthPoint(bool ok);
 protected:
     void paintEvent(QPaintEvent*) override;
 private:
-    struct Cell {
-        QString name;
-        double value = 0;
-        double threshold = 0;
-        bool alert = false;
-    };
-    std::vector<Cell> cells_;
+    std::deque<bool> healthHistory_; // 32 items for 4x8
 };
 
 class InteractiveChartView : public QChartView {
@@ -71,8 +80,6 @@ private:
     bool dragging_ = false;
     QPointF lastMousePos_;
 };
-
-// --- Main Dashboard ---
 
 class DashboardWidget : public QWidget {
     Q_OBJECT
@@ -94,61 +101,84 @@ public slots:
 
 private slots:
     void onUserInteracted();
+    void updateSystemMetrics();
 
 private:
     void setupUI();
-    void setupCharts();
+    void setupDashboard();
+    void setupAnalytics();
+    
     void addDataPoint(const DetectionResult& result);
-    void updateSummaryCards(const DetectionResult& result, uint64_t totalPackets);
-    void updateProtocolPie(const DetectionResult& result);
-    void updateSystemMetrics();
+    void updateDonuts(double cpu, double ram);
 
-    // Summary cards
-    QLabel* lblPps_ = nullptr;
-    QLabel* lblLabel_ = nullptr;
-    QLabel* lblConfidence_ = nullptr;
+    // -- Dashboard Overview --
+    QWidget* tabSystem_ = nullptr;
+    QLabel* lblCollector_ = nullptr;
     QLabel* lblTotalPackets_ = nullptr;
-    QLabel* lblConnectionStatus_ = nullptr;
+    QLabel* lblPps_ = nullptr;
+    QLabel* lblDropRate_ = nullptr;
+    QLabel* lblSources_ = nullptr;
+    QCheckBox* bpfCheckbox_ = nullptr;
+    QLabel* lblModel_ = nullptr;
+    QLabel* lblProbability_ = nullptr;
+    QLabel* lblStatus_ = nullptr;
 
-    // Charts
+    // -- Dashboard Main Chart --
     QChart* ppsChart_ = nullptr;
     QLineSeries* ppsSeries_ = nullptr;
     QLineSeries* tcpSeries_ = nullptr;
     QLineSeries* udpSeries_ = nullptr;
     QLineSeries* icmpSeries_ = nullptr;
-    QAreaSeries* attackArea_ = nullptr;
-    QLineSeries* attackUpper_ = nullptr;
+    QLineSeries* otherSeries_ = nullptr;
+    QAreaSeries* attackConfidenceArea_ = nullptr;
+    QLineSeries* attackConfidenceUpper_ = nullptr;
     QDateTimeAxis* timeAxis_ = nullptr;
     QValueAxis* ppsAxis_ = nullptr;
+    QValueAxis* confAxis_ = nullptr; // Right axis 0-100
     InteractiveChartView* ppsChartView_ = nullptr;
 
-    // Protocol pie
-    QChart* protocolChart_ = nullptr;
-    QPieSeries* protocolPie_ = nullptr;
-    QChartView* protocolChartView_ = nullptr;
+    // -- Dashboard Donuts --
+    QChart* cpuChart_ = nullptr;
+    QPieSeries* cpuPie_ = nullptr;
+    QLabel* cpuTitle_ = nullptr;
+    QChart* ramChart_ = nullptr;
+    QPieSeries* ramPie_ = nullptr;
+    QLabel* ramTitle_ = nullptr;
+    QChart* trafficChart_ = nullptr;
+    QPieSeries* trafficPie_ = nullptr;
+    QLabel* trafficTitle_ = nullptr;
 
-    // Heatmap & alert grid
+    // -- Deep Analytics Tab --
+    QWidget* tabAnalytics_ = nullptr;
+    AlertGridWidget* sloHealth_ = nullptr;
+    NetworkTopologyWidget* topologyWidget_ = nullptr;
+    
+    QTableWidget* tableSources_ = nullptr;
+    QTableWidget* tableTargets_ = nullptr;
+    
+    QChart* topPortsChart_ = nullptr;
+    QPieSeries* topPortsPie_ = nullptr;
+    
+    QChart* bandwidthChart_ = nullptr;
+    QLineSeries* bandwidthSeries_ = nullptr;
+    QDateTimeAxis* bwTimeAxis_ = nullptr;
+    QValueAxis* bwAxis_ = nullptr;
+
     HeatmapWidget* heatmapWidget_ = nullptr;
-    AlertGridWidget* alertGridWidget_ = nullptr;
+    
+    QChart* packetSizeChart_ = nullptr;
+    QBarSeries* packetSizeSeries_ = nullptr;
+    QBarSet* packetSizeSet_ = nullptr;
+    QBarCategoryAxis* sizeCatAxis_ = nullptr;
+    QValueAxis* sizeValAxis_ = nullptr;
 
-    // System metrics
-    QLabel* lblCpu_ = nullptr;
-    QLabel* lblRam_ = nullptr;
+    // Data 
     SystemMetricsCollector metricsCollector_;
     QTimer* metricsTimer_ = nullptr;
-
-    // BPF control
-    QCheckBox* bpfCheckbox_ = nullptr;
-
-    // Tab widgets for analytics and system
-    QWidget* tabAnalytics_ = nullptr;
-    QWidget* tabSystem_ = nullptr;
-
-    // Data history
     std::deque<QDateTime> timeHistory_;
-    static constexpr int MAX_CHART_POINTS = 300;
-
-    // Auto-scroll
+    uint64_t totalNormal_ = 0;
+    uint64_t totalAttack_ = 0;
+    
     bool userInteracting_ = false;
     QTimer* autoScrollTimer_ = nullptr;
 };

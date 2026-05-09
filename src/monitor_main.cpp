@@ -16,6 +16,8 @@
 #include <QSettings>
 #include <QPropertyAnimation>
 #include <QDir>
+#include <QStyle>
+#include <QPainter>
 
 #include "common/AppLogger.hpp"
 #include "common/DataBridge.hpp"
@@ -85,14 +87,14 @@ void MainWindow::setupUI() {
 
     // Sidebar
     sidebarList_ = new QListWidget();
-    sidebarList_->setFixedWidth(160);
+    sidebarList_->setFixedWidth(145);
     sidebarList_->setStyleSheet(R"(
         QListWidget {
             background: #1e1e2e; border: none; padding: 8px 0px;
             font-size: 13px; color: #cdd6f4;
         }
         QListWidget::item {
-            padding: 10px 12px; margin: 2px 8px; border-radius: 6px;
+            padding: 10px 8px; margin: 2px 8px; border-radius: 6px;
         }
         QListWidget::item:selected {
             background: #313244; color: #89b4fa;
@@ -102,11 +104,29 @@ void MainWindow::setupUI() {
         }
     )");
 
-    sidebarList_->addItem("■ Dashboard");
-    sidebarList_->addItem("■ Deep Analytics");
-    sidebarList_->addItem("■ Event Log (Live)");
-    sidebarList_->addItem("● Security Incidents");
-    sidebarList_->addItem("■ Sessions History");
+    sidebarList_->setIconSize(QSize(12, 12));
+
+    auto addSidebarItem = [this](const QString& text, const QColor& color, bool isCircle) {
+        auto* item = new QListWidgetItem(sidebarList_);
+        QPixmap pixmap(12, 12);
+        pixmap.fill(Qt::transparent);
+        QPainter p(&pixmap);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setBrush(color);
+        p.setPen(Qt::NoPen);
+        if (isCircle) p.drawEllipse(0, 0, 12, 12);
+        else p.drawRect(2, 2, 8, 8);
+        item->setIcon(QIcon(pixmap));
+        item->setText(text);
+        sidebarList_->addItem(item);
+    };
+
+    addSidebarItem("Dashboard", QColor("#a6e3a1"), false);
+    addSidebarItem("Deep Analytics", QColor("#89b4fa"), false);
+    addSidebarItem("Event Log (Live)", QColor("#f38ba8"), false);
+    addSidebarItem("Security Incidents", QColor("#f9e2af"), true);
+    addSidebarItem("Sessions History", QColor("#cba6f7"), false);
+    
     sidebarList_->setCurrentRow(0);
 
     mainLayout->addWidget(sidebarList_);
@@ -256,6 +276,7 @@ void MainWindow::setupConnections() {
 
 void MainWindow::setupSystemTray() {
     trayIcon_ = new QSystemTrayIcon(this);
+    trayIcon_->setIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
     trayIcon_->setToolTip("DDoS Monitor");
     trayIcon_->show();
 
