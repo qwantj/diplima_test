@@ -1,0 +1,33 @@
+{
+  "features": [
+    "Flow Duration",
+    "Total Fwd Packets",
+    "Total Backward Packets",
+    "Total Length of Fwd Packets",
+    "Total Length of Bwd Packets",
+    "Fwd Packet Length Mean",
+    "Bwd Packet Length Mean",
+    "Flow Packets/s"
+  ],
+  "mean": [
+    1190047.0494533395,
+    4.215609020608036,
+    0.09863645480022931,
+    1977.6981879447162,
+    11.798343245991896,
+    600.5555114640238,
+    0.35554322023342844,
+    1111564.1861977093
+  ],
+  "scale": [
+    6487791.222655997,
+    186.39881028748763,
+    3.067699135163247,
+    5272.61441959892,
+    5552.825909742925,
+    461.04753561227017,
+    10.804969162688925,
+    921722.4287564675
+  ],
+  "use_log1p": false
+}
