@@ -87,7 +87,7 @@ void MainWindow::setupUI() {
 
     // Sidebar
     sidebarList_ = new QListWidget();
-    sidebarList_->setFixedWidth(145);
+    sidebarList_->setFixedWidth(130);
     sidebarList_->setStyleSheet(R"(
         QListWidget {
             background: #1e1e2e; border: none; padding: 8px 0px;
@@ -124,7 +124,7 @@ void MainWindow::setupUI() {
     addSidebarItem("Dashboard", QColor("#a6e3a1"), false);
     addSidebarItem("Deep Analytics", QColor("#89b4fa"), false);
     addSidebarItem("Event Log (Live)", QColor("#f38ba8"), false);
-    addSidebarItem("Security Incidents", QColor("#f9e2af"), true);
+    addSidebarItem("Security Incidents", QColor("#f9e2af"), false);
     addSidebarItem("Sessions History", QColor("#cba6f7"), false);
     
     sidebarList_->setCurrentRow(0);
