@@ -19,12 +19,18 @@ DatabaseManager::~DatabaseManager() {
 bool DatabaseManager::connectToDatabase(const QString& host, int port,
                                          const QString& dbName, const QString& user,
                                          const QString& password) {
+    host_ = host;
+    port_ = port;
+    dbName_ = dbName;
+    user_ = user;
+    password_ = password;
+
     db_ = QSqlDatabase::addDatabase("QPSQL", connectionName_);
-    db_.setHostName(host);
-    db_.setPort(port);
-    db_.setDatabaseName(dbName);
-    db_.setUserName(user);
-    db_.setPassword(password);
+    db_.setHostName(host_);
+    db_.setPort(port_);
+    db_.setDatabaseName(dbName_);
+    db_.setUserName(user_);
+    db_.setPassword(password_);
 
     if (!db_.open()) {
         AppLogger::get()->error("Database connection error: {} {}",
@@ -207,11 +213,28 @@ void DatabaseManager::startAsyncWriter() {
     flushTimer_->setInterval(FLUSH_INTERVAL_MS);
     flushTimer_->moveToThread(writerThread_.get());
 
+    QString threadConnectionName = connectionName_ + "_writer";
     connect(writerThread_.get(), &QThread::started, flushTimer_.get(),
         qOverload<>(&QTimer::start));
-    connect(flushTimer_.get(), &QTimer::timeout, this, [this]() {
-        flushEvents();
-        flushSnapshots();
+
+    connect(flushTimer_.get(), &QTimer::timeout, flushTimer_.get(), [this, threadConnectionName]() {
+        // Ensure a dedicated DB connection for the writer thread exists
+        if (!QSqlDatabase::contains(threadConnectionName)) {
+            QSqlDatabase threadDb = QSqlDatabase::addDatabase("QPSQL", threadConnectionName);
+            threadDb.setHostName(host_);
+            threadDb.setPort(port_);
+            threadDb.setDatabaseName(dbName_);
+            threadDb.setUserName(user_);
+            threadDb.setPassword(password_);
+            if (!threadDb.open()) {
+                AppLogger::get()->error("DatabaseManager writer thread connection error");
+                return;
+            }
+        }
+
+        QSqlDatabase threadDb = QSqlDatabase::database(threadConnectionName);
+        flushEvents(threadDb);
+        flushSnapshots(threadDb);
     });
 
     writerThread_->start();
@@ -223,18 +246,29 @@ void DatabaseManager::stopAsyncWriter() {
         writerThread_->quit();
         writerThread_->wait();
     }
-    // Final flush
-    flushEvents();
-    flushSnapshots();
+    // Final flush on main thread using main connection
+    flushEvents(db_);
+    flushSnapshots(db_);
+
+    // Clean up writer connection if it exists
+    QString threadConnectionName = connectionName_ + "_writer";
+    if (QSqlDatabase::contains(threadConnectionName)) {
+        QSqlDatabase::removeDatabase(threadConnectionName);
+    }
 }
 
-void DatabaseManager::flushEvents() {
-    QMutexLocker lock(&dbMutex_);
+void DatabaseManager::flushEvents(QSqlDatabase& db) {
+    // Only lock dbMutex_ if flushing via the main connection
+    std::unique_ptr<QMutexLocker> lock;
+    if (db.connectionName() == connectionName_) {
+        lock = std::make_unique<QMutexLocker>(&dbMutex_);
+    }
+
     EventEntry entry;
     int count = 0;
-    db_.transaction();
+    db.transaction();
     while (eventQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db_);
+        QSqlQuery q(db);
         q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
         q.addBindValue(entry.result.sessionId);
         q.addBindValue(entry.result.timestamp);
@@ -248,18 +282,23 @@ void DatabaseManager::flushEvents() {
         q.exec();
         ++count;
     }
-    db_.commit();
+    db.commit();
     if (count > 0)
         AppLogger::get()->info("DatabaseManager: flushed {} events.", count);
 }
 
-void DatabaseManager::flushSnapshots() {
-    QMutexLocker lock(&dbMutex_);
+void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
+    // Only lock dbMutex_ if flushing via the main connection
+    std::unique_ptr<QMutexLocker> lock;
+    if (db.connectionName() == connectionName_) {
+        lock = std::make_unique<QMutexLocker>(&dbMutex_);
+    }
+
     SnapshotEntry entry;
     int count = 0;
-    db_.transaction();
+    db.transaction();
     while (snapshotQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db_);
+        QSqlQuery q(db);
         q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
         q.addBindValue(entry.sessionId);
         q.addBindValue(entry.timestamp);
@@ -269,7 +308,7 @@ void DatabaseManager::flushSnapshots() {
         q.exec();
         ++count;
     }
-    db_.commit();
+    db.commit();
     if (count > 0)
         AppLogger::get()->info("DatabaseManager: flushed {} stats snapshots.", count);
 }

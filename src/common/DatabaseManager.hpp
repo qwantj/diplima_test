@@ -46,11 +46,13 @@ private:
     void ensureTables();
     void startAsyncWriter();
     void stopAsyncWriter();
-    void flushEvents();
-    void flushSnapshots();
+    void flushEvents(QSqlDatabase& db);
+    void flushSnapshots(QSqlDatabase& db);
 
     QSqlDatabase db_;
     QString connectionName_;
+    QString host_, dbName_, user_, password_;
+    int port_ = 5432;
     bool connected_ = false;
 
     // Async writer
