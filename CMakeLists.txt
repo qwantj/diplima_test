@@ -11,9 +11,11 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # ---------- Qt6 ----------
+enable_testing()
+
 # Prevent Qt from finding Vulkan headers in msys64 (causes MSVC/MinGW header conflict)
 set(CMAKE_IGNORE_PATH "C:/msys64/mingw64/include" "C:/msys64/mingw64/lib")
-find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts Test)
 
 # ---------- PcapPlusPlus (vcpkg) ----------
 find_package(PcapPlusPlus REQUIRED CONFIG)
@@ -178,3 +180,33 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/config.json"
         "$<TARGET_FILE_DIR:ddos_monitor>/config.json"
 )
+
+# =========================================================
+#  ddos_unit_tests
+# =========================================================
+add_executable(ddos_unit_tests
+    tests/unit/main.cpp
+    tests/unit/test_ConfigManager.cpp
+    tests/unit/test_Protocol.cpp
+)
+
+target_link_libraries(ddos_unit_tests PRIVATE
+    ddos_core
+    Qt6::Test
+)
+
+add_test(NAME ddos_unit_tests COMMAND ddos_unit_tests)
+
+if(ONNXRUNTIME_FOUND AND EXISTS "${ONNXRUNTIME_DLL}")
+    add_custom_command(TARGET ddos_unit_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Copying onnxruntime.dll to test build directory"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ONNXRUNTIME_DLL}" "$<TARGET_FILE_DIR:ddos_unit_tests>"
+    )
+endif()
+
+if(LIBPQ_DLL_PATH)
+    add_custom_command(TARGET ddos_unit_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "Copying libpq.dll to test build directory"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LIBPQ_DLL_PATH}" "$<TARGET_FILE_DIR:ddos_unit_tests>"
+    )
+endif()
