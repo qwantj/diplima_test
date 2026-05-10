@@ -13,7 +13,7 @@ set(CMAKE_AUTORCC ON)
 # ---------- Qt6 ----------
 # Prevent Qt from finding Vulkan headers in msys64 (causes MSVC/MinGW header conflict)
 set(CMAKE_IGNORE_PATH "C:/msys64/mingw64/include" "C:/msys64/mingw64/lib")
-find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts Test)
 
 # ---------- PcapPlusPlus (vcpkg) ----------
 find_package(PcapPlusPlus REQUIRED CONFIG)
@@ -155,6 +155,20 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Removing Pcap SDK stubs (packet.dll, wpcap.dll) to use system Npcap"
     COMMAND ${CMAKE_COMMAND} -E remove -f "$<TARGET_FILE_DIR:ddos_monitor>/packet.dll" "$<TARGET_FILE_DIR:ddos_monitor>/wpcap.dll"
 )
+
+# =========================================================
+#  Tests
+# =========================================================
+enable_testing()
+
+add_executable(test_config tests/test_config.cpp)
+target_link_libraries(test_config PRIVATE ddos_core Qt6::Test)
+
+add_executable(test_protocol tests/test_protocol.cpp)
+target_link_libraries(test_protocol PRIVATE ddos_core Qt6::Test)
+
+add_test(NAME config_test COMMAND test_config)
+add_test(NAME protocol_test COMMAND test_protocol)
 
 # =========================================================
 #  Copy models to output directories

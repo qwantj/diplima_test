@@ -276,9 +276,10 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     EventEntry entry;
     int count = 0;
     db.transaction();
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
+
     while (eventQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
         q.addBindValue(entry.result.sessionId);
         q.addBindValue(entry.result.timestamp);
         q.addBindValue(entry.result.label);
@@ -305,9 +306,10 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     SnapshotEntry entry;
     int count = 0;
     db.transaction();
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
+
     while (snapshotQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
         q.addBindValue(entry.sessionId);
         q.addBindValue(entry.timestamp);
         q.addBindValue(entry.pps);
@@ -330,9 +332,10 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     SecurityEventEntry entry;
     int count = 0;
     db.transaction();
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
+
     while (securityEventQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
         q.addBindValue(entry.sessionId);
         q.addBindValue(entry.startTime);
         q.addBindValue(entry.duration);
