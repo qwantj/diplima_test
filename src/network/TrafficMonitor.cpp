@@ -16,6 +16,9 @@ std::vector<std::pair<std::string, std::string>> TrafficMonitor::listInterfaces(
     std::vector<std::pair<std::string, std::string>> result;
     auto& devList = pcpp::PcapLiveDeviceList::getInstance().getPcapLiveDevicesList();
     AppLogger::get()->info("TrafficMonitor: found {} raw devices.", devList.size());
+    if (devList.empty()) {
+        AppLogger::get()->warn("If 0 devices is unexpected, ensure you are running as Administrator and Npcap is installed.");
+    }
     for (auto* dev : devList) {
         std::string name = dev->getName();
         std::string desc = dev->getDesc();
@@ -32,9 +35,15 @@ bool TrafficMonitor::startCapture(const std::string& interfaceName) {
     auto devList = pcpp::PcapLiveDeviceList::getInstance().getPcapLiveDevicesList();
     device_ = nullptr;
 
+    if (devList.empty()) {
+        AppLogger::get()->error("TrafficMonitor: 0 raw devices found. Ensure you are running as Administrator!");
+        return false;
+    }
+
     for (auto* dev : devList) {
         if (dev->getName() == interfaceName || dev->getDesc() == interfaceName ||
-            std::string(dev->getDesc()).find(interfaceName) != std::string::npos) {
+            std::string(dev->getDesc()).find(interfaceName) != std::string::npos ||
+            dev->getIPv4Address().toString() == interfaceName) {
             device_ = dev;
             break;
         }

@@ -11,12 +11,32 @@
 
 #include <csignal>
 #include <atomic>
+#include <QNetworkInterface>
+#include <QHostAddress>
 
 static std::atomic<bool> g_running{true};
 
 static void signalHandler(int) {
     g_running = false;
     QCoreApplication::quit();
+}
+
+// Поиск IP-адреса по человекочитаемому имени (например, "Wi-Fi" или "Ethernet")
+static std::string resolveNetworkInterface(const std::string& userInput) {
+    QString input = QString::fromStdString(userInput);
+    for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
+        if (netIface.humanReadableName().compare(input, Qt::CaseInsensitive) == 0 ||
+            netIface.name().compare(input, Qt::CaseInsensitive) == 0) {
+            for (const QNetworkAddressEntry& entry : netIface.addressEntries()) {
+                if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
+                    std::string ipStr = entry.ip().toString().toStdString();
+                    AppLogger::get()->info("Resolved alias '{}' to IP: {}", userInput, ipStr);
+                    return ipStr;
+                }
+            }
+        }
+    }
+    return userInput; // Если не найдено, возвращаем как есть (может быть это уже IP)
 }
 
 int main(int argc, char* argv[]) {
@@ -55,8 +75,25 @@ int main(int argc, char* argv[]) {
 
     // List interfaces
     if (parser.isSet("list-interfaces")) {
+        AppLogger::get()->info("Available user-friendly network interfaces:");
+        for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
+            if (netIface.flags().testFlag(QNetworkInterface::IsUp)) {
+                QString ipList;
+                for (const QNetworkAddressEntry& entry : netIface.addressEntries()) {
+                    if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
+                        if (!ipList.isEmpty()) ipList += ", ";
+                        ipList += entry.ip().toString();
+                    }
+                }
+                if (!ipList.isEmpty()) {
+                    AppLogger::get()->info("  \"{}\" (IP: {})", 
+                        netIface.humanReadableName().toStdString(), ipList.toStdString());
+                }
+            }
+        }
+
+        AppLogger::get()->info("--- Internal Pcap Interfaces ---");
         auto ifaces = TrafficMonitor::listInterfaces();
-        AppLogger::get()->info("Available network interfaces:");
         for (auto& [name, desc] : ifaces) {
             AppLogger::get()->info("  {} - {}", name, desc);
         }
@@ -178,9 +215,10 @@ int main(int argc, char* argv[]) {
             checkTimer->start(1000);
         });
     } else {
-        std::string iface = parser.value("interface").toStdString();
+        std::string rawIface = parser.value("interface").toStdString();
+        std::string iface = resolveNetworkInterface(rawIface);
         if (!engine.startLive(iface)) {
-            AppLogger::get()->error("Failed to start live capture.");
+            AppLogger::get()->error("Failed to start live capture on interface: {}", rawIface);
             return 1;
         }
     }

@@ -150,3 +150,20 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Running windeployqt for ddos_monitor"
     COMMAND Qt6::windeployqt "$<TARGET_FILE:ddos_monitor>"
 )
+
+# =========================================================
+#  Copy models to output directories
+# =========================================================
+add_custom_command(TARGET ddos_collector POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying models to collector build directory"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/models"
+        "$<TARGET_FILE_DIR:ddos_collector>/models"
+)
+
+add_custom_command(TARGET ddos_monitor POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying models to monitor build directory"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/models"
+        "$<TARGET_FILE_DIR:ddos_monitor>/models"
+)

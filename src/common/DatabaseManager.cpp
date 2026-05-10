@@ -54,6 +54,7 @@ void DatabaseManager::disconnect() {
         stopAsyncWriter();
         db_.close();
         connected_ = false;
+        db_ = QSqlDatabase(); // Сбрасываем объект перед удалением соединения
         QSqlDatabase::removeDatabase(connectionName_);
         AppLogger::get()->info("Disconnected from database.");
     }
@@ -242,7 +243,12 @@ void DatabaseManager::startAsyncWriter() {
 
 void DatabaseManager::stopAsyncWriter() {
     if (writerThread_ && writerThread_->isRunning()) {
-        flushTimer_->stop();
+        // Остановка таймера и возврат его в главный поток для безопасного удаления
+        QThread* current = QThread::currentThread();
+        QMetaObject::invokeMethod(flushTimer_.get(), [this, current]() {
+            flushTimer_->stop();
+            flushTimer_->moveToThread(current);
+        }, Qt::BlockingQueuedConnection);
         writerThread_->quit();
         writerThread_->wait();
     }
@@ -259,9 +265,9 @@ void DatabaseManager::stopAsyncWriter() {
 
 void DatabaseManager::flushEvents(QSqlDatabase& db) {
     // Only lock dbMutex_ if flushing via the main connection
-    std::unique_ptr<QMutexLocker> lock;
+    std::unique_ptr<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
-        lock = std::make_unique<QMutexLocker>(&dbMutex_);
+        lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
     }
 
     EventEntry entry;
@@ -289,9 +295,9 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
 
 void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     // Only lock dbMutex_ if flushing via the main connection
-    std::unique_ptr<QMutexLocker> lock;
+    std::unique_ptr<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
-        lock = std::make_unique<QMutexLocker>(&dbMutex_);
+        lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
     }
 
     SnapshotEntry entry;

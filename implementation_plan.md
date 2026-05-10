@@ -202,8 +202,8 @@ Cameron Desrochers' lock-free concurrent queue (header-only, MIT)
 
 ### Сборка
 ```powershell
-cmake -S . -B build_restore -G "Visual Studio 17 2022" -A x64 ^
-  -DCMAKE_TOOLCHAIN_FILE=C:/Dev/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+cmake -S . -B build_restore -G "Visual Studio 17 2022" -A x64 `
+  -DCMAKE_TOOLCHAIN_FILE=C:/Dev/vcpkg/scripts/buildsystems/vcpkg.cmake `
   -DCMAKE_PREFIX_PATH=C:/qt/6.10.2/msvc2022_64
 cmake --build build_restore --config Release
 ```
