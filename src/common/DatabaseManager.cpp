@@ -276,18 +276,18 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     EventEntry entry;
     int count = 0;
     db.transaction();
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
     while (eventQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
-        q.addBindValue(entry.result.sessionId);
-        q.addBindValue(entry.result.timestamp);
-        q.addBindValue(entry.result.label);
-        q.addBindValue(entry.result.confidence);
-        q.addBindValue(entry.result.pps);
-        q.addBindValue((qint64)entry.result.totalPackets);
+        q.bindValue(0, entry.result.sessionId);
+        q.bindValue(1, entry.result.timestamp);
+        q.bindValue(2, entry.result.label);
+        q.bindValue(3, entry.result.confidence);
+        q.bindValue(4, entry.result.pps);
+        q.bindValue(5, (qint64)entry.result.totalPackets);
         nlohmann::json featJson = entry.result.features;
-        q.addBindValue(QString::fromStdString(featJson.dump()));
-        q.addBindValue(QString::fromStdString(entry.result.modelName));
+        q.bindValue(6, QString::fromStdString(featJson.dump()));
+        q.bindValue(7, QString::fromStdString(entry.result.modelName));
         q.exec();
         ++count;
     }
@@ -305,14 +305,14 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     SnapshotEntry entry;
     int count = 0;
     db.transaction();
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
     while (snapshotQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
-        q.addBindValue(entry.sessionId);
-        q.addBindValue(entry.timestamp);
-        q.addBindValue(entry.pps);
-        q.addBindValue((qint64)entry.totalPackets);
-        q.addBindValue(entry.currentLabel);
+        q.bindValue(0, entry.sessionId);
+        q.bindValue(1, entry.timestamp);
+        q.bindValue(2, entry.pps);
+        q.bindValue(3, (qint64)entry.totalPackets);
+        q.bindValue(4, entry.currentLabel);
         q.exec();
         ++count;
     }
@@ -330,16 +330,16 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     SecurityEventEntry entry;
     int count = 0;
     db.transaction();
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
     while (securityEventQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
-        q.addBindValue(entry.sessionId);
-        q.addBindValue(entry.startTime);
-        q.addBindValue(entry.duration);
-        q.addBindValue(entry.attackerIp);
-        q.addBindValue(entry.ppsMax);
-        q.addBindValue(entry.typeLabel);
-        q.addBindValue(entry.confidence);
+        q.bindValue(0, entry.sessionId);
+        q.bindValue(1, entry.startTime);
+        q.bindValue(2, entry.duration);
+        q.bindValue(3, entry.attackerIp);
+        q.bindValue(4, entry.ppsMax);
+        q.bindValue(5, entry.typeLabel);
+        q.bindValue(6, entry.confidence);
         q.exec();
         ++count;
     }

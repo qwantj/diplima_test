@@ -14,7 +14,7 @@ TcpServer::~TcpServer() {
 }
 
 bool TcpServer::startListening(quint16 port) {
-    if (!listen(QHostAddress::Any, port)) {
+    if (!listen(QHostAddress::LocalHost, port)) {
         AppLogger::get()->error("TcpServer: failed to listen on port {}: {}",
             port, errorString().toStdString());
         return false;

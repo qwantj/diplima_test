@@ -2,6 +2,7 @@
 #include "common/AppLogger.hpp"
 #include <fstream>
 #include <iomanip>
+#include <cstdlib>
 
 bool ConfigManager::load(const std::string& path, AppConfig& config) {
     std::ifstream f(path);
@@ -24,6 +25,14 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
             config.dbName = db.value("name", config.dbName);
             config.dbUser = db.value("user", config.dbUser);
             config.dbPass = db.value("password", config.dbPass);
+        }
+
+        // Environment variables override
+        if (const char* envUser = std::getenv("DDOS_DB_USER")) {
+            config.dbUser = envUser;
+        }
+        if (const char* envPass = std::getenv("DDOS_DB_PASS")) {
+            config.dbPass = envPass;
         }
 
         if (j.contains("ml")) {

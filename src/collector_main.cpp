@@ -60,9 +60,14 @@ static std::string resolveNetworkInterface(const std::string& userInput) {
     return userInput;
 }
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 int main(int argc, char* argv[]) {
 #ifdef Q_OS_WIN
-    system("chcp 65001 > nul");
+    SetConsoleCP(65001);
+    SetConsoleOutputCP(65001);
 #endif
 
     QCoreApplication app(argc, argv);
@@ -168,11 +173,22 @@ int main(int argc, char* argv[]) {
         parser.value("db-password"));
 
     int sessionId = -1;
+    // Stats counters
+    uint64_t totalPackets = 0;
+    uint64_t attackCount = 0;
+    uint64_t benignCount = 0;
+
     auto createNewSession = [&](const QString& iface, const QString& model) {
         if (dbConnected) {
             if (sessionId > 0) {
-                // we should close previous session, but for simplicity here we just create new one
-                // ideally we'd track packets per session
+                dbManager.closeSession(sessionId, totalPackets, attackCount, benignCount);
+                AppLogger::get()->info("Closed previous session ID: {}. Stats: total={}, attacks={}, benign={}",
+                                       sessionId, totalPackets, attackCount, benignCount);
+
+                // Reset counters for new session
+                totalPackets = 0;
+                attackCount = 0;
+                benignCount = 0;
             }
             sessionId = dbManager.createSession(iface, model);
             AppLogger::get()->info("Created new session ID: {}", sessionId);
@@ -239,11 +255,6 @@ int main(int argc, char* argv[]) {
 
     // System metrics
     SystemMetricsCollector metricsCollector;
-
-    // Stats counters
-    uint64_t totalPackets = 0;
-    uint64_t attackCount = 0;
-    uint64_t benignCount = 0;
 
     // Detection callback
     engine.setResultCallback([&](const DetectionResult& result) {
