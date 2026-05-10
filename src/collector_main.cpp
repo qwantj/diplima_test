@@ -15,6 +15,10 @@
 #include <QNetworkInterface>
 #include <QHostAddress>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 static std::atomic<bool> g_running{true};
 
 static void signalHandler(int) {
@@ -62,7 +66,8 @@ static std::string resolveNetworkInterface(const std::string& userInput) {
 
 int main(int argc, char* argv[]) {
 #ifdef Q_OS_WIN
-    system("chcp 65001 > nul");
+    SetConsoleCP(CP_UTF8);
+    SetConsoleOutputCP(CP_UTF8);
 #endif
 
     QCoreApplication app(argc, argv);
