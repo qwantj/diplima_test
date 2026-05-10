@@ -222,9 +222,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (cmd == Protocol::CMD_CONFIG_BPF) {
             bool enable = data.value("enable", false);
-            // Example: if enabled, block top talker from previous window? 
-            // For now just logging or setting a simple BPF
-            AppLogger::get()->info("Command: config_bpf enabled={}", enable);
+            engine.setMitigationEnabled(enable);
+            AppLogger::get()->info("Command: config_bpf (Active Mitigation) enabled={}", enable);
         } else if (cmd == Protocol::CMD_STOP) {
             AppLogger::get()->info("Command: stop");
             g_running = false;

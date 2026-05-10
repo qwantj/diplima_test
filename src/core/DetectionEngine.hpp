@@ -50,6 +50,9 @@ public:
     // Pcap dumper
     void enablePcapDump(const std::string& dir);
 
+    // Active Mitigation
+    void setMitigationEnabled(bool enabled);
+
     // Access submodules
     TrafficMonitor& trafficMonitor() { return monitor_; }
     FeatureExtractor& featureExtractor() { return extractor_; }
@@ -61,6 +64,8 @@ private:
     void inferenceLoop();
     void processWindow();
     void updateIncidentState(const DetectionResult& result);
+    void blockIp(const std::string& ip);
+    void unblockAllIps();
 
     TrafficMonitor   monitor_;
     FeatureExtractor extractor_;
@@ -82,9 +87,11 @@ private:
 
     // Incident tracking
     bool isUnderAttack_ = false;
+    bool isMitigationEnabled_ = false;
     QDateTime attackStartTime_;
     double maxPps_ = 0.0;
     std::string attackType_;
     float maxConfidence_ = 0.0;
     std::map<std::string, uint64_t> attackSrcIps_;
+    std::set<std::string> activeBlockedIps_;
 };

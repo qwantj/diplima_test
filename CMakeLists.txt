@@ -158,17 +158,23 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
 
 # =========================================================
 #  Copy models to output directories
-# =========================================================
+# --- Copy models and config to build directory ---
 add_custom_command(TARGET ddos_collector POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying models to collector build directory"
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying models and config to collector build directory"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/models"
         "$<TARGET_FILE_DIR:ddos_collector>/models"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/config.json"
+        "$<TARGET_FILE_DIR:ddos_collector>/config.json"
 )
 
 add_custom_command(TARGET ddos_monitor POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying models to monitor build directory"
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying models and config to monitor build directory"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/models"
         "$<TARGET_FILE_DIR:ddos_monitor>/models"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_CURRENT_SOURCE_DIR}/config.json"
+        "$<TARGET_FILE_DIR:ddos_monitor>/config.json"
 )

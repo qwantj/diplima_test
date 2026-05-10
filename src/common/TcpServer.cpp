@@ -3,7 +3,7 @@
 #include "common/Protocol.hpp"
 #include <nlohmann/json.hpp>
 
-TcpServer::TcpServer(QObject* parent) : QTcpServer(parent) {}
+TcpServer::TcpServer(QObject* parent) : QTcpServer(parent), fileBuffer_("tcp_buffer.jsonl") {}
 
 TcpServer::~TcpServer() {
     for (auto* c : clients_) {
@@ -38,41 +38,42 @@ void TcpServer::incomingConnection(qintptr socketDescriptor) {
         socket->peerAddress().toString().toStdString(),
         socket->peerPort(), clients_.size());
 
-    // Send buffer of recent messages
-    nlohmann::json bufferMsg;
-    bufferMsg["type"] = Protocol::MSG_BUFFER;
-    nlohmann::json items = nlohmann::json::array();
-    for (const auto& msg : recentBuffer_)
-        items.push_back(nlohmann::json::parse(msg.toStdString()));
-    bufferMsg["items"] = items;
-    QByteArray framed = Protocol::frame(QByteArray::fromStdString(bufferMsg.dump()));
-    socket->write(framed);
-    socket->flush();
+    // If we have buffered offline messages, send them to the first connected client
+    if (fileBuffer_.size() > 0) {
+        auto messages = fileBuffer_.readAllAndClear();
+        nlohmann::json bufferMsg;
+        bufferMsg["type"] = Protocol::MSG_BUFFER;
+        nlohmann::json items = nlohmann::json::array();
+        for (const auto& msg : messages) {
+            try {
+                items.push_back(nlohmann::json::parse(msg.toStdString()));
+            } catch (...) {} // Ignore corrupted lines
+        }
+        bufferMsg["items"] = items;
+        QByteArray framed = Protocol::frame(QByteArray::fromStdString(bufferMsg.dump()));
+        socket->write(framed);
+        socket->flush();
+        AppLogger::get()->info("TcpServer: sent {} buffered offline messages to new client.", messages.size());
+    }
 }
 
 void TcpServer::broadcast(const QByteArray& data) {
-    // Store in recent buffer
-    recentBuffer_.push_back(data);
-    while ((int)recentBuffer_.size() > maxBufferSize_)
-        recentBuffer_.pop_front();
-
-    // Send to all connected clients
-    for (int i = clients_.size() - 1; i >= 0; --i) {
-        auto* c = clients_[i];
-        if (c->state() == QTcpSocket::ConnectedState) {
-            c->write(data);
-            c->flush();
+    if (clients_.isEmpty()) {
+        // Buffer to disk if no clients are connected
+        fileBuffer_.push(data);
+    } else {
+        // Send to all connected clients
+        for (int i = clients_.size() - 1; i >= 0; --i) {
+            auto* c = clients_[i];
+            if (c->state() == QTcpSocket::ConnectedState) {
+                c->write(data);
+                c->flush();
+            }
         }
     }
 }
 
 int TcpServer::clientCount() const { return clients_.size(); }
-
-void TcpServer::setBufferSize(int maxItems) { maxBufferSize_ = maxItems; }
-
-std::vector<QByteArray> TcpServer::getRecentBuffer() const {
-    return {recentBuffer_.begin(), recentBuffer_.end()};
-}
 
 void TcpServer::onClientDisconnected() {
     auto* socket = qobject_cast<QTcpSocket*>(sender());
