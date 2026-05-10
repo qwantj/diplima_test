@@ -70,8 +70,8 @@ static std::string resolveNetworkInterface(const std::string& userInput) {
 
 int main(int argc, char* argv[]) {
 #ifdef Q_OS_WIN
-    SetConsoleCP(CP_UTF8);
     SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
 #endif
 
     QCoreApplication app(argc, argv);

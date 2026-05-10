@@ -2,9 +2,14 @@
 #include "common/AppLogger.hpp"
 #include <fstream>
 #include <iomanip>
+#include <filesystem>
 #include <cstdlib>
 
 bool ConfigManager::load(const std::string& path, AppConfig& config) {
+    if (!std::filesystem::exists(path)) {
+        AppLogger::get()->warn("ConfigManager: file '{}' does not exist, using defaults.", path);
+        return false;
+    }
     std::ifstream f(path);
     if (!f.is_open()) {
         AppLogger::get()->warn("ConfigManager: could not open '{}', using defaults.", path);

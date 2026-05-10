@@ -77,26 +77,39 @@ DetectionResult deserializeResult(const nlohmann::json& j) {
     r.uniqueSourceCount = j.value("unique_sources", (uint32_t)0);
     r.activeFlowsCount = j.value("active_flows", (uint32_t)0);
 
-    if (j.contains("features"))
+    if (j.contains("features")) {
         r.features = j["features"].get<std::vector<double>>();
+        r.features.reserve(8); // Optimization
+    }
     if (j.contains("timestamp"))
         r.timestamp = QDateTime::fromString(
             QString::fromStdString(j["timestamp"].get<std::string>()), Qt::ISODateWithMs);
 
     if (j.contains("protocol_breakdown"))
         r.protocolBreakdown = j["protocol_breakdown"].get<std::map<std::string, double>>();
-    if (j.contains("packet_size_histogram"))
+    if (j.contains("packet_size_histogram")) {
         r.packetSizeHistogram = j["packet_size_histogram"].get<std::vector<int>>();
+        r.packetSizeHistogram.reserve(5); // Optimization
+    }
 
-    if (j.contains("top_talkers"))
-        for (auto& t : j["top_talkers"])
+    if (j.contains("top_talkers")) {
+        auto& tt = j["top_talkers"];
+        r.topTalkers.reserve(tt.size());
+        for (auto& t : tt)
             r.topTalkers.emplace_back(t["ip"].get<std::string>(), t["count"].get<uint64_t>());
-    if (j.contains("top_ports"))
-        for (auto& p : j["top_ports"])
+    }
+    if (j.contains("top_ports")) {
+        auto& tp = j["top_ports"];
+        r.topPorts.reserve(tp.size());
+        for (auto& p : tp)
             r.topPorts.emplace_back(p["port"].get<uint16_t>(), p["count"].get<uint64_t>());
-    if (j.contains("top_targets"))
-        for (auto& t : j["top_targets"])
+    }
+    if (j.contains("top_targets")) {
+        auto& tt = j["top_targets"];
+        r.topTargets.reserve(tt.size());
+        for (auto& t : tt)
             r.topTargets.emplace_back(t["target"].get<std::string>(), t["count"].get<uint64_t>());
+    }
 
     return r;
 }

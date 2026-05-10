@@ -12,6 +12,7 @@
 #include <fstream>
 #include <cmath>
 #include <algorithm>
+#include <filesystem>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -22,6 +23,9 @@
 FeatureExtractor::FeatureExtractor() {
 
     sizeHistogram_.resize(5, 0);
+    srcIpCounts_.clear();
+    dstPortCounts_.clear();
+    targetCounts_.clear();
 }
 
 bool FeatureExtractor::loadScalerParams(const std::string& jsonPath) {
@@ -313,22 +317,31 @@ void FeatureExtractor::reset() {
     targetCounts_.clear();
     uniqueSources_.clear();
     sizeHistogram_.assign(5, 0);
+    flowInitiators_.clear();
+
+    // Also reset window start time for safety
+    windowStart_ = std::chrono::steady_clock::now();
 }
 
 void FeatureExtractor::setModelScaler(const std::string& modelName) {
-    std::string base = modelName;
-    auto pos = base.rfind('.');
-    if (pos != std::string::npos) base = base.substr(0, pos);
-    pos = base.rfind('/');
-    if (pos == std::string::npos) pos = base.rfind('\\');
-    std::string dir = (pos != std::string::npos) ? base.substr(0, pos + 1) : "models/";
-    std::string name = (pos != std::string::npos) ? base.substr(pos + 1) : base;
+    // Try model-specific scaler first: e.g. "mlp_model.onnx" -> "mlp_scaler_params.json"
+    namespace fs = std::filesystem;
+    fs::path p(modelName);
 
-    auto mpos = name.find("_model");
-    if (mpos != std::string::npos) name = name.substr(0, mpos);
+    fs::path dir = p.parent_path();
+    if (dir.empty()) {
+        dir = "models";
+    }
 
-    std::string specific = dir + name + "_scaler_params.json";
-    std::string fallback = dir + "scaler_params.json";
+    std::string stem = p.stem().string();
+    // Remove "_model" suffix if present
+    auto mpos = stem.find("_model");
+    if (mpos != std::string::npos) {
+        stem = stem.substr(0, mpos);
+    }
+
+    std::string specific = (dir / (stem + "_scaler_params.json")).string();
+    std::string fallback = (dir / "scaler_params.json").string();
 
     if (!loadScalerParams(specific)) {
         loadScalerParams(fallback);
