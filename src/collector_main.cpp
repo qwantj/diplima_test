@@ -107,6 +107,7 @@ int main(int argc, char* argv[]) {
         for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
             if (netIface.flags().testFlag(QNetworkInterface::IsUp)) {
                 QString ipList;
+                ipList.reserve(netIface.addressEntries().size() * 17);
                 for (const QNetworkAddressEntry& entry : netIface.addressEntries()) {
                     if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
                         if (!ipList.isEmpty()) ipList += ", ";
