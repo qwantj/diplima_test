@@ -5,8 +5,8 @@
 #include <QList>
 #include <QByteArray>
 #include <vector>
-#include <deque>
 #include <nlohmann/json.hpp>
+#include "common/FileBuffer.hpp"
 
 class TcpServer : public QTcpServer {
     Q_OBJECT
@@ -14,12 +14,9 @@ public:
     explicit TcpServer(QObject* parent = nullptr);
     ~TcpServer() override;
 
-    bool startListening(quint16 port = 50050);
+    bool startListening(const QString& address = "127.0.0.1", quint16 port = 50050);
     void broadcast(const QByteArray& data);
     int  clientCount() const;
-
-    void setBufferSize(int maxItems);
-    std::vector<QByteArray> getRecentBuffer() const;
 
 protected:
     void incomingConnection(qintptr socketDescriptor) override;
@@ -33,6 +30,5 @@ private slots:
 
 private:
     QList<QTcpSocket*> clients_;
-    std::deque<QByteArray> recentBuffer_;
-    int maxBufferSize_ = 500;
+    FileBuffer fileBuffer_;
 };

@@ -29,6 +29,7 @@ nlohmann::json serializeResult(const DetectionResult& r) {
     j["session_id"]  = r.sessionId;
     j["timestamp"]   = r.timestamp.toString(Qt::ISODateWithMs).toStdString();
     j["unique_sources"] = r.uniqueSourceCount;
+    j["active_flows"] = r.activeFlowsCount;
 
     if (!r.protocolBreakdown.empty())
         j["protocol_breakdown"] = r.protocolBreakdown;
@@ -74,6 +75,7 @@ DetectionResult deserializeResult(const nlohmann::json& j) {
     r.modelName    = j.value("model", std::string());
     r.sessionId    = j.value("session_id", 0);
     r.uniqueSourceCount = j.value("unique_sources", (uint32_t)0);
+    r.activeFlowsCount = j.value("active_flows", (uint32_t)0);
 
     if (j.contains("features"))
         r.features = j["features"].get<std::vector<double>>();

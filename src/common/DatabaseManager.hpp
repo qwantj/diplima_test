@@ -13,6 +13,7 @@
 #include <memory>
 
 #include "common/Protocol.hpp"
+#include "common/FileBuffer.hpp"
 #include "concurrentqueue.h"
 
 class DatabaseManager : public QObject {
@@ -87,4 +88,11 @@ private:
     std::unique_ptr<QTimer>  flushTimer_;
     QMutex dbMutex_;
     static constexpr int FLUSH_INTERVAL_MS = 5000;
+
+    // Database Throttling State
+    QDateTime lastEventFlushTime_;
+    int eventBufferCount_ = 0;
+    static constexpr int MAX_EVENTS_PER_FLUSH = 1000;
+
+    FileBuffer pendingEventsBuffer_;
 };

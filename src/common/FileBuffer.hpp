@@ -7,21 +7,24 @@
 #include <deque>
 #include <vector>
 #include <atomic>
-#include "concurrentqueue.h"
 
 class FileBuffer {
 public:
-    explicit FileBuffer(const QString& filePath = "");
+    explicit FileBuffer(const QString& filePath = "", size_t maxMemoryItems = 10000);
+    ~FileBuffer();
 
     void setFilePath(const QString& path);
-    void append(const QByteArray& data);
-    std::deque<QByteArray> readAll();
+    void push(const QByteArray& data);
+    std::vector<QByteArray> readAllAndClear();
     void clear();
-    int  size() const;
+    int size() const;
 
 private:
+    void flushToDisk();
+
     QString filePath_;
-    moodycamel::ConcurrentQueue<QByteArray> buffer_;
-    std::atomic<int> size_{0};
-    mutable QMutex fileMutex_; // Only for file writing, memory buffer is lock-free
+    size_t maxMemoryItems_;
+    std::deque<QByteArray> memoryBuffer_;
+    mutable QMutex mutex_;
+    std::atomic<int> totalSize_{0};
 };

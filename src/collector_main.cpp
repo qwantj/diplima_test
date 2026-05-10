@@ -91,6 +91,7 @@ int main(int argc, char* argv[]) {
         {{"m", "model"},    "ONNX model path", "path", QString::fromStdString(config.defaultModel)},
         {{"e", "ep"},       "Execution provider (cpu|cuda|dml)", "ep", QString::fromStdString(config.defaultEp)},
         {"list-interfaces", "List available network interfaces"},
+        {"tcp-host",        "TCP server bind address", "host", QString::fromStdString(config.tcpBindHost)},
         {"tcp-port",        "TCP server port", "port", QString::number(config.tcpPort)},
         {"db-host",         "PostgreSQL host", "host", QString::fromStdString(config.dbHost)},
         {"db-port",         "PostgreSQL port", "port", QString::number(config.dbPort)},
@@ -112,6 +113,7 @@ int main(int argc, char* argv[]) {
         for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
             if (netIface.flags().testFlag(QNetworkInterface::IsUp)) {
                 QString ipList;
+                ipList.reserve(netIface.addressEntries().size() * 17);
                 for (const QNetworkAddressEntry& entry : netIface.addressEntries()) {
                     if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
                         if (!ipList.isEmpty()) ipList += ", ";
@@ -157,9 +159,11 @@ int main(int argc, char* argv[]) {
 
     // Init TCP server
     TcpServer tcpServer;
+    QString tcpHost = parser.value("tcp-host");
     quint16 tcpPort = parser.value("tcp-port").toUShort();
-    if (!tcpServer.startListening(tcpPort)) {
-        AppLogger::get()->error("Failed to start TCP server on port {}", tcpPort);
+    if (!tcpServer.startListening(tcpHost, tcpPort)) {
+        AppLogger::get()->error("Failed to start TCP server on {} port {}",
+            tcpHost.toStdString(), tcpPort);
         return 1;
     }
 
@@ -171,6 +175,11 @@ int main(int argc, char* argv[]) {
         parser.value("db-name"),
         parser.value("db-user"),
         parser.value("db-password"));
+
+    // Stats counters
+    uint64_t totalPackets = 0;
+    uint64_t attackCount = 0;
+    uint64_t benignCount = 0;
 
     int sessionId = -1;
     // Stats counters
@@ -238,9 +247,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (cmd == Protocol::CMD_CONFIG_BPF) {
             bool enable = data.value("enable", false);
-            // Example: if enabled, block top talker from previous window? 
-            // For now just logging or setting a simple BPF
-            AppLogger::get()->info("Command: config_bpf enabled={}", enable);
+            engine.setMitigationEnabled(enable);
+            AppLogger::get()->info("Command: config_bpf (Active Mitigation) enabled={}", enable);
         } else if (cmd == Protocol::CMD_STOP) {
             AppLogger::get()->info("Command: stop");
             g_running = false;

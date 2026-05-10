@@ -7,12 +7,20 @@
 #include <TcpLayer.h>
 #include <UdpLayer.h>
 #include <IcmpLayer.h>
+#include <PayloadLayer.h>
 
 #include <fstream>
 #include <cmath>
 #include <algorithm>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <arpa/inet.h>
+#endif
+
 FeatureExtractor::FeatureExtractor() {
+
     sizeHistogram_.resize(5, 0);
 }
 
@@ -39,14 +47,16 @@ bool FeatureExtractor::loadScalerParams(const std::string& jsonPath) {
 }
 
 void FeatureExtractor::processPacket(pcpp::RawPacket& rawPacket) {
+    auto now = std::chrono::steady_clock::now();
     if (!windowStarted_) {
-        windowStart_ = std::chrono::steady_clock::now();
+        windowStart_ = now;
         windowStarted_ = true;
     }
 
     pcpp::Packet parsedPacket(&rawPacket);
     int pktLen = rawPacket.getRawDataLen();
     totalBytes_ += pktLen;
+    totalPackets_++;
 
     // Size histogram (5 bins: 0-64, 65-256, 257-512, 513-1024, 1025+)
     if (pktLen <= 64)       sizeHistogram_[0]++;
@@ -69,15 +79,25 @@ void FeatureExtractor::processPacket(pcpp::RawPacket& rawPacket) {
     uint16_t srcPort = 0, dstPort = 0;
     uint8_t proto = 0;
 
+    bool isTcp = false;
+    bool isSyn = false, isAck = false, isFin = false, isRst = false, isPsh = false, isUrg = false;
+    uint32_t windowSize = 0;
+
     if (auto* tcpLayer = parsedPacket.getLayerOfType<pcpp::TcpLayer>()) {
         tcpPackets_++;
         auto* hdr = tcpLayer->getTcpHeader();
-        if (hdr->synFlag) synPackets_++;
-        if (hdr->finFlag) finPackets_++;
-        if (hdr->rstFlag) rstPackets_++;
+        isSyn = hdr->synFlag; if (isSyn) synPackets_++;
+        isAck = hdr->ackFlag; 
+        isFin = hdr->finFlag; if (isFin) finPackets_++;
+        isRst = hdr->rstFlag; if (isRst) rstPackets_++;
+        isPsh = hdr->pshFlag; 
+        isUrg = hdr->urgFlag; 
+        windowSize = ntohs(hdr->windowSize);
+        
         srcPort = tcpLayer->getSrcPort();
         dstPort = tcpLayer->getDstPort();
         proto = 6;
+        isTcp = true;
         dstPortCounts_[dstPort]++;
         targetCounts_[dstIp + ":" + std::to_string(dstPort)]++;
     }
@@ -98,7 +118,6 @@ void FeatureExtractor::processPacket(pcpp::RawPacket& rawPacket) {
     }
 
     // Flow-based forward/backward classification using 5-tuple
-    // Create canonical flow key (sorted IPs for direction-independent matching)
     FlowKey fk;
     if (srcIp < dstIp || (srcIp == dstIp && srcPort <= dstPort)) {
         fk = {srcIp, dstIp, srcPort, dstPort, proto};
@@ -106,63 +125,136 @@ void FeatureExtractor::processPacket(pcpp::RawPacket& rawPacket) {
         fk = {dstIp, srcIp, dstPort, srcPort, proto};
     }
 
-    auto it = flowInitiators_.find(fk);
-    bool isForward;
-    if (it == flowInitiators_.end()) {
-        // New flow — this src is the initiator (forward direction)
-        flowInitiators_[fk] = srcIp;
-        isForward = true;
-    } else {
-        // Known flow — check if src is the initiator
-        isForward = (it->second == srcIp);
+    auto& stats = activeFlows_[fk];
+    if (stats.initiatorIp.empty()) {
+        stats.initiatorIp = srcIp;
+        stats.firstPacketTime = now;
     }
+    stats.lastPacketTime = now;
+
+    bool isForward = (stats.initiatorIp == srcIp);
 
     if (isForward) {
-        fwdPackets_++;
-        fwdBytes_ += pktLen;
+        stats.fwdPackets++;
+        stats.fwdBytes += pktLen;
     } else {
-        bwdPackets_++;
-        bwdBytes_ += pktLen;
+        stats.bwdPackets++;
+        stats.bwdBytes += pktLen;
+    }
+
+    if (isTcp) {
+        if (isSyn) stats.synPackets++;
+        if (isAck) stats.ackPackets++;
+        if (isFin) stats.finPackets++;
+        if (isRst) stats.rstPackets++;
+        if (isPsh) stats.pshPackets++;
+        if (isUrg) stats.urgPackets++;
+        stats.tcpWindowSizeTotal += windowSize;
+    }
+
+    // Payload Entropy
+    if (auto* payload = parsedPacket.getLayerOfType<pcpp::PayloadLayer>()) {
+        const uint8_t* payloadData = payload->getPayload();
+        size_t payloadLen = payload->getPayloadLen();
+        stats.totalPayloadBytes += payloadLen;
+        for (size_t i = 0; i < payloadLen; ++i) {
+            stats.byteCounts[payloadData[i]]++;
+        }
     }
 }
 
-std::vector<double> FeatureExtractor::computeFeatures() {
-    auto now = std::chrono::steady_clock::now();
-    double deltaT = 0.0;
-    if (windowStarted_) {
-        deltaT = std::chrono::duration<double>(now - windowStart_).count();
-        if (deltaT < 0.001) deltaT = 0.001;
-    } else {
-        deltaT = 2.0; // default window
+std::vector<std::vector<double>> FeatureExtractor::computeFeaturesBatch() {
+    std::vector<std::vector<double>> batch;
+    batch.reserve(activeFlows_.size());
+
+    for (const auto& [key, stats] : activeFlows_) {
+        double flowDuration = std::chrono::duration<double>(stats.lastPacketTime - stats.firstPacketTime).count() * 1e6;
+        if (flowDuration <= 0.0) flowDuration = 1.0; // avoid div by zero
+        
+        double totalFwdPackets = (double)stats.fwdPackets;
+        double totalBwdPackets = (double)stats.bwdPackets;
+        double totalLenFwd = (double)stats.fwdBytes;
+        double totalLenBwd = (double)stats.bwdBytes;
+        double fwdMean = (stats.fwdPackets > 0) ? (double)stats.fwdBytes / stats.fwdPackets : 0.0;
+        double bwdMean = (stats.bwdPackets > 0) ? (double)stats.bwdBytes / stats.bwdPackets : 0.0;
+        double flowPps = (stats.fwdPackets + stats.bwdPackets) / (flowDuration / 1e6);
+        
+        double entropy = 0.0;
+        if (stats.totalPayloadBytes > 0) {
+            for (uint64_t count : stats.byteCounts) {
+                if (count > 0) {
+                    double p = (double)count / stats.totalPayloadBytes;
+                    entropy -= p * std::log2(p);
+                }
+            }
+        }
+
+        double avgWindowSize = (stats.fwdPackets + stats.bwdPackets > 0) ? 
+            (double)stats.tcpWindowSizeTotal / (stats.fwdPackets + stats.bwdPackets) : 0.0;
+
+        // Base 8 features
+        std::vector<double> features = {
+            flowDuration, totalFwdPackets, totalBwdPackets, totalLenFwd, totalLenBwd, fwdMean, bwdMean, flowPps
+        };
+        
+        // Extended features (if mapped by scaler, they'll be used, else ignored by model)
+        features.push_back((double)stats.synPackets);
+        features.push_back((double)stats.ackPackets);
+        features.push_back((double)stats.finPackets);
+        features.push_back((double)stats.rstPackets);
+        features.push_back((double)stats.pshPackets);
+        features.push_back((double)stats.urgPackets);
+        features.push_back(entropy);
+        features.push_back(avgWindowSize);
+
+        batch.push_back(features);
     }
+    return batch;
+}
 
-    // 8 features in CICIDS order
-    double flowDuration        = deltaT * 1e6; // microseconds
-    double totalFwdPackets     = (double)fwdPackets_;
-    double totalBwdPackets     = (double)bwdPackets_;
-    double totalLenFwd         = (double)fwdBytes_;
-    double totalLenBwd         = (double)bwdBytes_;
-    double fwdMean             = (fwdPackets_ > 0) ? (double)fwdBytes_ / fwdPackets_ : 0.0;
-    double bwdMean             = (bwdPackets_ > 0) ? (double)bwdBytes_ / bwdPackets_ : 0.0;
-    double flowPps             = (fwdPackets_ + bwdPackets_) / deltaT;
+std::vector<std::vector<double>> FeatureExtractor::computeNormalizedFeaturesBatch() {
+    auto rawBatch = computeFeaturesBatch();
+    if (!scalerLoaded_) return rawBatch;
 
-    return {flowDuration, totalFwdPackets, totalBwdPackets,
-            totalLenFwd, totalLenBwd, fwdMean, bwdMean, flowPps};
+    std::vector<std::vector<double>> normBatch;
+    normBatch.reserve(rawBatch.size());
+
+    size_t expectedFeatures = scaler_.mean.size();
+
+    for (const auto& raw : rawBatch) {
+        std::vector<double> norm(expectedFeatures, 0.0);
+        for (size_t i = 0; i < expectedFeatures && i < raw.size(); i++) {
+            double x = raw[i];
+            if (scaler_.useLog1p) x = std::log1p(std::max(0.0, x));
+            norm[i] = (scaler_.scale[i] != 0.0) ? (x - scaler_.mean[i]) / scaler_.scale[i] : 0.0;
+        }
+        normBatch.push_back(norm);
+    }
+    return normBatch;
 }
 
 std::vector<double> FeatureExtractor::computeNormalizedFeatures() {
-    auto raw = computeFeatures();
-    if (!scalerLoaded_ || scaler_.mean.size() != raw.size())
-        return raw;
-
-    std::vector<double> norm(raw.size());
-    for (size_t i = 0; i < raw.size(); i++) {
-        double x = raw[i];
-        if (scaler_.useLog1p)
-            x = std::log1p(std::max(0.0, x));
-        norm[i] = (scaler_.scale[i] != 0.0) ? (x - scaler_.mean[i]) / scaler_.scale[i] : 0.0;
+    auto batch = computeNormalizedFeaturesBatch();
+    if (batch.empty()) {
+        return std::vector<double>(scalerLoaded_ ? scaler_.mean.size() : 8, 0.0);
     }
-    return norm;
+    
+    // For single-vector output (to not break DetectionEngine), return the features
+    // of the flow with the highest packet count (Top Talker Flow).
+    size_t topFlowIdx = 0;
+    uint64_t maxPackets = 0;
+    
+    int idx = 0;
+    for (const auto& [key, stats] : activeFlows_) {
+        uint64_t pkts = stats.fwdPackets + stats.bwdPackets;
+        if (pkts > maxPackets) {
+            maxPackets = pkts;
+            topFlowIdx = idx;
+        }
+        idx++;
+    }
+    
+    return batch[topFlowIdx];
 }
 
 void FeatureExtractor::fillTelemetry(DetectionResult& result) const {
@@ -171,7 +263,7 @@ void FeatureExtractor::fillTelemetry(DetectionResult& result) const {
         std::chrono::duration<double>(now - windowStart_).count() : 2.0;
     if (deltaT < 0.001) deltaT = 0.001;
 
-    result.totalPackets = fwdPackets_ + bwdPackets_;
+    result.totalPackets = totalPackets_;
     result.tcpPackets   = tcpPackets_;
     result.udpPackets   = udpPackets_;
     result.icmpPackets  = icmpPackets_;
@@ -181,12 +273,11 @@ void FeatureExtractor::fillTelemetry(DetectionResult& result) const {
     result.rstPackets   = rstPackets_;
     result.totalBytes   = totalBytes_;
     result.flowDuration = deltaT;
-    result.pps = result.totalPackets / deltaT;
+    result.pps = totalPackets_ / deltaT;
     result.uniqueSourceCount = (uint32_t)uniqueSources_.size();
     result.packetSizeHistogram = sizeHistogram_;
-    // Drop rate will be filled by DetectionEngine as it has access to monitor
+    result.activeFlowsCount = (uint32_t)activeFlows_.size();
 
-    // Protocol breakdown (percentages)
     double total = (double)result.totalPackets;
     if (total > 0) {
         result.protocolBreakdown["tcp"]   = tcpPackets_ / total * 100.0;
@@ -195,33 +286,26 @@ void FeatureExtractor::fillTelemetry(DetectionResult& result) const {
         result.protocolBreakdown["other"] = otherPackets_ / total * 100.0;
     }
 
-    // Top talkers (source IPs)
     std::vector<std::pair<std::string, uint64_t>> talkers(srcIpCounts_.begin(), srcIpCounts_.end());
     std::sort(talkers.begin(), talkers.end(),
         [](auto& a, auto& b) { return a.second > b.second; });
-    result.topTalkers.assign(talkers.begin(),
-        talkers.begin() + std::min(talkers.size(), (size_t)10));
+    result.topTalkers.assign(talkers.begin(), talkers.begin() + std::min(talkers.size(), (size_t)10));
 
-    // Top ports
     std::vector<std::pair<uint16_t, uint64_t>> ports(dstPortCounts_.begin(), dstPortCounts_.end());
     std::sort(ports.begin(), ports.end(),
         [](auto& a, auto& b) { return a.second > b.second; });
-    result.topPorts.assign(ports.begin(),
-        ports.begin() + std::min(ports.size(), (size_t)10));
+    result.topPorts.assign(ports.begin(), ports.begin() + std::min(ports.size(), (size_t)10));
 
-    // Top targets
     std::vector<std::pair<std::string, uint64_t>> targets(targetCounts_.begin(), targetCounts_.end());
     std::sort(targets.begin(), targets.end(),
         [](auto& a, auto& b) { return a.second > b.second; });
-    result.topTargets.assign(targets.begin(),
-        targets.begin() + std::min(targets.size(), (size_t)10));
+    result.topTargets.assign(targets.begin(), targets.begin() + std::min(targets.size(), (size_t)10));
 }
 
 void FeatureExtractor::reset() {
     windowStarted_ = false;
-    fwdPackets_ = bwdPackets_ = 0;
-    fwdBytes_ = bwdBytes_ = 0;
-    tcpPackets_ = udpPackets_ = icmpPackets_ = otherPackets_ = 0;
+    activeFlows_.clear();
+    totalPackets_ = tcpPackets_ = udpPackets_ = icmpPackets_ = otherPackets_ = 0;
     synPackets_ = finPackets_ = rstPackets_ = 0;
     totalBytes_ = 0;
     srcIpCounts_.clear();
@@ -229,21 +313,17 @@ void FeatureExtractor::reset() {
     targetCounts_.clear();
     uniqueSources_.clear();
     sizeHistogram_.assign(5, 0);
-    flowInitiators_.clear();
 }
 
 void FeatureExtractor::setModelScaler(const std::string& modelName) {
-    // Try model-specific scaler first: e.g. "mlp_model.onnx" -> "mlp_scaler_params.json"
     std::string base = modelName;
     auto pos = base.rfind('.');
     if (pos != std::string::npos) base = base.substr(0, pos);
-    // Try e.g. "models/mlp_scaler_params.json"
     pos = base.rfind('/');
     if (pos == std::string::npos) pos = base.rfind('\\');
     std::string dir = (pos != std::string::npos) ? base.substr(0, pos + 1) : "models/";
     std::string name = (pos != std::string::npos) ? base.substr(pos + 1) : base;
 
-    // Remove "_model" suffix if present
     auto mpos = name.find("_model");
     if (mpos != std::string::npos) name = name.substr(0, mpos);
 

@@ -25,18 +25,33 @@ LogWidget::LogWidget(QWidget* parent) : QWidget(parent) {
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setShowGrid(false);
+    table_->setAlternatingRowColors(true);
     table_->horizontalHeader()->setStretchLastSection(true);
     table_->setStyleSheet(R"(
         QTableWidget {
-            background: #2b2b2b; color: #eeeeee;
-            border: none; font-size: 12px; gridline-color: #444444;
+            background-color: #1e1e2e;
+            alternate-background-color: #242437;
+            color: #cdd6f4;
+            gridline-color: transparent;
+            border: none;
+            font-size: 12px;
         }
-        QTableWidget::item { padding: 5px 10px; border-bottom: 1px solid #3d3d3d; }
-        QTableWidget::item:selected { background: #444444; }
         QHeaderView::section {
-            background: #222222; color: #aaaaaa;
-            border: none; border-bottom: 1px solid #444444;
-            padding: 8px 10px; font-weight: bold; font-size: 12px;
+            background-color: #181825;
+            color: #a6adc8;
+            font-weight: bold;
+            padding: 10px;
+            border: none;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+        QTableWidget::item {
+            padding: 8px;
+            border-bottom: 1px solid #313244;
+        }
+        QTableWidget::item:selected {
+            background-color: #45475a;
+            color: #f5e0dc;
         }
     )");
 

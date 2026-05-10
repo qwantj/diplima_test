@@ -27,21 +27,34 @@
 #include "common/SystemMetricsCollector.hpp"
 #include "monitor_ui/ThemePalette.hpp"
 
-// ---- Interactive chart view with zoom/pan ----
+// ---- Interactive chart view with zoom/pan and hover ----
 class InteractiveChartView : public QChartView {
     Q_OBJECT
 public:
     explicit InteractiveChartView(QChart* chart, QWidget* parent = nullptr);
 signals:
     void userInteracted();
+    void mouseMoved(const QPoint& pos);
+    void mouseLeft();
 protected:
     void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
 private:
     bool dragging_ = false;
     QPointF lastMousePos_;
+};
+
+// ---- Smart Tooltip (Monium Style) ----
+class SmartTooltip : public QFrame {
+    Q_OBJECT
+public:
+    explicit SmartTooltip(QWidget* parent = nullptr);
+    void updateContent(const QString& title, const QList<std::pair<QColor, QString>>& items, const QString& footer = "");
+private:
+    QLabel* label_ = nullptr;
 };
 
 // ---- SLO Health Grid (4x8 alert rectangles) ----
@@ -84,6 +97,18 @@ private:
     QDateTime maxTime_;
 };
 
+// ---- Donut Chart View with center text ----
+class DonutChartView : public QChartView {
+    Q_OBJECT
+public:
+    explicit DonutChartView(QChart* chart, QWidget* parent = nullptr);
+    void setCenterText(const QString& text);
+protected:
+    void paintEvent(QPaintEvent* event) override;
+private:
+    QString centerText_;
+};
+
 // ---- Main Dashboard ----
 class DashboardWidget : public QWidget {
     Q_OBJECT
@@ -106,6 +131,8 @@ public slots:
 private slots:
     void onUserInteracted();
     void updateSystemMetrics();
+    void onChartHover(const QPoint& pos);
+    void onChartLeave();
 
 private:
     void setupUI();
@@ -114,12 +141,14 @@ private:
     void addDataPoint(const DetectionResult& result);
     void updateDonuts(double cpu, double ram);
 
+    SmartTooltip* chartTooltip_ = nullptr;
     // Overview status bar
     QLabel* lblCollector_ = nullptr;
     QLabel* lblTotalPackets_ = nullptr;
     QLabel* lblPps_ = nullptr;
     QLabel* lblDropRate_ = nullptr;
     QLabel* lblSources_ = nullptr;
+    QLabel* lblFlows_ = nullptr;
     QCheckBox* bpfCheckbox_ = nullptr;
     QLabel* lblModel_ = nullptr;
     QLabel* lblProbability_ = nullptr;
@@ -128,12 +157,19 @@ private:
     // Main PPS chart
     QChart* ppsChart_ = nullptr;
     QLineSeries* ppsSeries_ = nullptr;
-    QLineSeries* tcpSeries_ = nullptr;
-    QLineSeries* udpSeries_ = nullptr;
-    QLineSeries* icmpSeries_ = nullptr;
+    
+    QLineSeries* zeroSeries_ = nullptr;
+    QLineSeries* tcpUpper_ = nullptr;
+    QAreaSeries* tcpArea_ = nullptr;
+    QLineSeries* udpUpper_ = nullptr;
+    QAreaSeries* udpArea_ = nullptr;
+    QLineSeries* icmpUpper_ = nullptr;
+    QAreaSeries* icmpArea_ = nullptr;
+    
     QLineSeries* otherSeries_ = nullptr;
     QAreaSeries* attackConfidenceArea_ = nullptr;
     QLineSeries* attackConfidenceUpper_ = nullptr;
+    
     QDateTimeAxis* timeAxis_ = nullptr;
     QValueAxis* ppsAxis_ = nullptr;
     QValueAxis* confAxis_ = nullptr;
@@ -151,12 +187,17 @@ private:
     QChart* cpuChart_ = nullptr;
     QPieSeries* cpuPie_ = nullptr;
     QLabel* cpuTitle_ = nullptr;
+    DonutChartView* cpuView_ = nullptr;
+    
     QChart* ramChart_ = nullptr;
     QPieSeries* ramPie_ = nullptr;
     QLabel* ramTitle_ = nullptr;
+    DonutChartView* ramView_ = nullptr;
+    
     QChart* trafficChart_ = nullptr;
     QPieSeries* trafficPie_ = nullptr;
     QLabel* trafficTitle_ = nullptr;
+    DonutChartView* trafficView_ = nullptr;
 
     // Analytics tab widgets
     AlertGridWidget* sloHealth_ = nullptr;

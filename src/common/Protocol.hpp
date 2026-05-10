@@ -40,6 +40,7 @@ struct DetectionResult {
     std::vector<std::pair<uint16_t, uint64_t>>    topPorts;
     std::vector<std::pair<std::string, uint64_t>> topTargets;
     uint32_t uniqueSourceCount = 0;
+    uint32_t activeFlowsCount = 0;
 
     int         sessionId = 0;
     std::string modelName;

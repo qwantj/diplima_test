@@ -16,6 +16,7 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
         f >> j;
 
         config.collectorHost = j.value("collector_host", config.collectorHost);
+        config.tcpBindHost = j.value("tcp_bind_host", config.tcpBindHost);
         config.tcpPort = j.value("tcp_port", config.tcpPort);
 
         if (j.contains("database")) {
@@ -27,11 +28,13 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
             config.dbPass = db.value("password", config.dbPass);
         }
 
-        // Environment variables override
-        if (const char* envUser = std::getenv("DDOS_DB_USER")) {
+        const char* envUser = std::getenv("DDOS_DB_USER");
+        if (envUser && envUser[0] != '\0') {
             config.dbUser = envUser;
         }
-        if (const char* envPass = std::getenv("DDOS_DB_PASS")) {
+
+        const char* envPass = std::getenv("DDOS_DB_PASS");
+        if (envPass && envPass[0] != '\0') {
             config.dbPass = envPass;
         }
 
@@ -59,6 +62,7 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
 bool ConfigManager::save(const std::string& path, const AppConfig& config) {
     nlohmann::json j;
     j["collector_host"] = config.collectorHost;
+    j["tcp_bind_host"] = config.tcpBindHost;
     j["tcp_port"] = config.tcpPort;
 
     j["database"] = {

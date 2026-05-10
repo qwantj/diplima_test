@@ -6,7 +6,7 @@
 static int s_dbConnectionId = 0;
 
 DatabaseManager::DatabaseManager(QObject* parent)
-    : QObject(parent)
+    : QObject(parent), pendingEventsBuffer_("pending_events.jsonl")
 {
     connectionName_ = QString("ddos_db_%1").arg(++s_dbConnectionId);
 }
@@ -268,33 +268,107 @@ void DatabaseManager::stopAsyncWriter() {
 }
 
 void DatabaseManager::flushEvents(QSqlDatabase& db) {
-    std::unique_ptr<QMutexLocker<QMutex>> lock;
+    // Используем std::optional для избежания лишней аллокации в куче (heap)
+    std::optional<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
-        lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
+        lock.emplace(&dbMutex_);
     }
 
-    EventEntry entry;
+    if (!db.isOpen()) return;
+
     int count = 0;
-    db.transaction();
+    int throttled = 0;
+    bool transactionActive = false;
+
+    // Создаем ОДИН объект запроса и подготавливаем его ОДИН раз для всего метода
     QSqlQuery q(db);
-    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
+    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+
+    // 1. Сначала обрабатываем события из дискового буфера (если они есть)
+    if (pendingEventsBuffer_.size() > 0) {
+        auto bufferedMessages = pendingEventsBuffer_.readAllAndClear();
+        if (!bufferedMessages.empty()) {
+            db.transaction();
+            transactionActive = true;
+            
+            for (const auto& msg : bufferedMessages) {
+                try {
+                    auto j = nlohmann::json::parse(msg.toStdString());
+                    DetectionResult r = Protocol::deserializeResult(j);
+
+                    q.bindValue(0, r.sessionId);
+                    q.bindValue(1, r.timestamp);
+                    q.bindValue(2, r.label);
+                    q.bindValue(3, r.confidence);
+                    q.bindValue(4, r.pps);
+                    q.bindValue(5, static_cast<qint64>(r.totalPackets));
+                    q.bindValue(6, QString::fromStdString(r.featuresJson().dump()));
+                    q.bindValue(7, QString::fromStdString(r.modelName));
+
+                    if (q.exec()) {
+                        ++count;
+                    }
+                } catch (...) {
+                    // Логирование ошибки парсинга/выполнения (рекомендуется добавить)
+                }
+            }
+            
+            db.commit();
+            AppLogger::get()->info("DatabaseManager: restored and flushed {} buffered offline events.", count);
+            count = 0;
+            transactionActive = false;
+        }
+    }
+
+    // 2. Обрабатываем живую очередь
+    EventEntry entry;
     while (eventQueue_.try_dequeue(entry)) {
+        // Если база внезапно закрылась — всё оставшееся отправляем в буфер
+        if (!db.isOpen()) {
+            nlohmann::json j = Protocol::serializeResult(entry.result);
+            pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
+            continue;
+        }
+
+        // Защита от перегрузки (Throttling)
+        if (count >= MAX_EVENTS_PER_FLUSH) {
+            nlohmann::json j = Protocol::serializeResult(entry.result);
+            pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
+            throttled++;
+            continue;
+        }
+
+        if (!transactionActive) {
+            db.transaction();
+            transactionActive = true;
+        }
+
         q.bindValue(0, entry.result.sessionId);
         q.bindValue(1, entry.result.timestamp);
         q.bindValue(2, entry.result.label);
         q.bindValue(3, entry.result.confidence);
         q.bindValue(4, entry.result.pps);
-        q.bindValue(5, (qint64)entry.result.totalPackets);
+        q.bindValue(5, static_cast<qint64>(entry.result.totalPackets));
+
         nlohmann::json featJson = entry.result.features;
         q.bindValue(6, QString::fromStdString(featJson.dump()));
         q.bindValue(7, QString::fromStdString(entry.result.modelName));
-        q.exec();
-        ++count;
+
+        if (q.exec()) {
+            ++count;
+        }
     }
-    db.commit();
-    if (count > 0)
-        AppLogger::get()->info("DatabaseManager: flushed {} events.", count);
+
+    if (transactionActive) {
+        db.commit();
+    }
+
+    if (throttled > 0) {
+        AppLogger::get()->warn("DatabaseManager: throttled {} events to disk buffer to protect DB.", throttled);
+    }
 }
+
 
 void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     std::unique_ptr<QMutexLocker<QMutex>> lock;
