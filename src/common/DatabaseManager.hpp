@@ -22,11 +22,11 @@ public:
     explicit DatabaseManager(QObject* parent = nullptr);
     ~DatabaseManager() override;
 
-    bool connectToDatabase(const QString& host = "localhost",
-                           int port = 5432,
-                           const QString& dbName = "ddos_detection_db",
-                           const QString& user = "postgres",
-                           const QString& password = "qwerty");
+    bool connectToDatabase(const QString& host,
+                           int port,
+                           const QString& dbName,
+                           const QString& user,
+                           const QString& password);
     void disconnect();
     bool isConnected() const;
 
