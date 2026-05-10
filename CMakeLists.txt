@@ -13,7 +13,7 @@ set(CMAKE_AUTORCC ON)
 # ---------- Qt6 ----------
 # Prevent Qt from finding Vulkan headers in msys64 (causes MSVC/MinGW header conflict)
 set(CMAKE_IGNORE_PATH "C:/msys64/mingw64/include" "C:/msys64/mingw64/lib")
-find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts Test)
 
 # ---------- PcapPlusPlus (vcpkg) ----------
 find_package(PcapPlusPlus REQUIRED CONFIG)
@@ -158,6 +158,12 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
 
 # =========================================================
 #  Copy models to output directories
+# =========================================================
+#  Tests
+# =========================================================
+enable_testing()
+add_subdirectory(tests)
+
 # --- Copy models and config to build directory ---
 add_custom_command(TARGET ddos_collector POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Copying models and config to collector build directory"
