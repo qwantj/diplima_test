@@ -1,40 +1,55 @@
-# diplima_test
+# DDoS Detection System
 
-## VS Code extensions
+Программный комплекс обнаружения атак типа «отказ в обслуживании» с использованием машинного обучения.
 
-- C/C++ Extension Pack (ms-vscode.cpptools-extension-pack)
-- CMake Tools (ms-vscode.cmake-tools)
-- Qt Tools (tonka3000.qtvsctools)
+Разработано в рамках выпускной квалификационной работы (ВКР).
+Студент: Дерюга А.А., группа А-08-22.
 
-## Local path setup
+## Основные возможности
 
-The `.vscode` configuration assumes MSYS2 MinGW is installed at `C:/msys64/mingw64`
-and vcpkg dependencies at `C:/vcpkg/installed/x64-mingw-static`. Update those paths
-to match your local setup if needed.
+- **Захват трафика:** Реальное время (Npcap) и анализ дампов (PCAP).
+- **ML-анализ:** Классификация трафика с помощью моделей Random Forest и MLP (ONNX Runtime).
+- **База данных:** Хранение истории атак и сессий в PostgreSQL.
+- **Визуализация:** Современный Dashboard на Qt 6 с графиками PPS, тепловыми картами и топологией сети.
+- **Производительность:** Обработка до 130k+ пакетов в секунду (PPS) на стандартном железе.
 
-## Windows-only setup checklist
+## Быстрый старт (Windows + MSVC)
 
-To continue development on Windows (MinGW x64) you need to install Qt locally.
-Recommended steps:
+### Предварительные требования
+1. **Visual Studio 2022** с установленным компонентом "Разработка классических приложений на C++".
+2. **Qt 6.6+** (установлен через Qt Online Installer, компонент MSVC 2022 64-bit).
+3. **vcpkg** для управления зависимостями.
+4. **PostgreSQL 14+** (запущенный локально).
 
-1. Install **MSYS2** and ensure `C:/msys64/mingw64/bin` is on PATH.
-2. Install **Qt 6 (MinGW 64-bit)** via the Qt Online Installer.
-   - Set `Qt6_DIR` or add the Qt install prefix to `CMAKE_PREFIX_PATH`
-     (e.g. `C:/Qt/6.6.2/mingw_64/lib/cmake/Qt6`).
-3. Install dependencies with **vcpkg**:
-   - `vcpkg install pcapplusplus:x64-mingw-static`
-   - `vcpkg install onnxruntime:x64-mingw-static` (optional, for ML inference)
-4. Configure CMake:
-  - ```
-    cmake -S . -B build -G "MinGW Makefiles" ^
-      -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
-      -DCMAKE_PREFIX_PATH=C:/Qt/6.6.2/mingw_64
-    ```
+### Установка зависимостей
+```powershell
+vcpkg install pcapplusplus:x64-windows
+vcpkg install onnxruntime:x64-windows
+```
 
-For a detailed walkthrough with screenshots and `Qt6_DIR` verification, see
-[`docs/windows-setup.md`](docs/windows-setup.md).
+### Сборка
+1. Откройте папку проекта в **VS Code**.
+2. Убедитесь, что расширение **CMake Tools** активно.
+3. Выберите пресет `Visual Studio Community 2022 Release - x64`.
+4. Нажмите **Build**.
 
-## MinGW runtime note
+Для подробных инструкций см. [docs/windows-setup.md](docs/windows-setup.md).
 
-CMake enables `ENABLE_PORTABLE_RUNTIME` to add `-static-libgcc -static-libstdc++` for MinGW builds.
-If you turn it off, ensure `C:/msys64/mingw64/bin` is on PATH when launching `dos_detector.exe`.
+## Структура проекта
+
+- `src/collector_main.cpp` — Программа сбора и анализа данных (Collector).
+- `src/monitor_main.cpp` — Программа мониторинга и управления (Monitor).
+- `src/common/DatabaseManager.cpp` — Взаимодействие с PostgreSQL.
+- `models/` — Обученные ONNX модели и параметры скейлера.
+- `docs/` — Полная техническая документация и графические материалы.
+
+## Документация
+
+- [Техническая спецификация](docs/DOCUMENTATION.md)
+- [Графические материалы (диаграммы ВКР)](docs/diagrams.md)
+- [Алгоритм извлечения признаков](docs/FeatureExtractionAlgorithm.md)
+- [Отчет о соответствии заданию ВКР](docs/VKR_COMPLIANCE.md)
+
+## Лицензия
+
+Проект разработан исключительно в образовательных целях.

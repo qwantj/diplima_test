@@ -1,17 +1,20 @@
-#include <QTest>
 #include <QCoreApplication>
-#include <iostream>
+#include <QtTest>
 
-#include "ProtocolTests.hpp"
+#include "test_ConfigManager.hpp"
+#include "test_Protocol.hpp"
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     QCoreApplication app(argc, argv);
+
     int status = 0;
 
-    {
-        ProtocolTests protocolTests;
-        status |= QTest::qExec(&protocolTests, argc, argv);
-    }
+    TestConfigManager configTest;
+    status |= QTest::qExec(&configTest, argc, argv);
+
+    TestProtocol protocolTest;
+    status |= QTest::qExec(&protocolTest, argc, argv);
 
     return status;
 }
