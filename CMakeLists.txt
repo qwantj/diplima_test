@@ -157,6 +157,11 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
 )
 
 # =========================================================
+#  Tests
+# =========================================================
+add_subdirectory(tests)
+
+# =========================================================
 #  Copy models to output directories
 # --- Copy models and config to build directory ---
 add_custom_command(TARGET ddos_collector POST_BUILD
