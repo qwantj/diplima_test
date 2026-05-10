@@ -12,8 +12,8 @@ struct AppConfig {
     std::string dbHost = "localhost";
     int dbPort = 5432;
     std::string dbName = "ddos_detection_db";
-    std::string dbUser = "postgres";
-    std::string dbPass = "qwerty";
+    std::string dbUser = "";
+    std::string dbPass = "";
 
     // ML
     std::string defaultModel = "models/rf_model.onnx";

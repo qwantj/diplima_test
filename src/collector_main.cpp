@@ -107,6 +107,7 @@ int main(int argc, char* argv[]) {
         for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
             if (netIface.flags().testFlag(QNetworkInterface::IsUp)) {
                 QString ipList;
+                ipList.reserve(netIface.addressEntries().size() * 17);
                 for (const QNetworkAddressEntry& entry : netIface.addressEntries()) {
                     if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
                         if (!ipList.isEmpty()) ipList += ", ";
@@ -167,12 +168,19 @@ int main(int argc, char* argv[]) {
         parser.value("db-user"),
         parser.value("db-password"));
 
+    // Stats counters
+    uint64_t totalPackets = 0;
+    uint64_t attackCount = 0;
+    uint64_t benignCount = 0;
+
     int sessionId = -1;
     auto createNewSession = [&](const QString& iface, const QString& model) {
         if (dbConnected) {
             if (sessionId > 0) {
-                // we should close previous session, but for simplicity here we just create new one
-                // ideally we'd track packets per session
+                dbManager.closeSession(sessionId, totalPackets, attackCount, benignCount);
+                totalPackets = 0;
+                attackCount = 0;
+                benignCount = 0;
             }
             sessionId = dbManager.createSession(iface, model);
             AppLogger::get()->info("Created new session ID: {}", sessionId);
@@ -238,11 +246,6 @@ int main(int argc, char* argv[]) {
 
     // System metrics
     SystemMetricsCollector metricsCollector;
-
-    // Stats counters
-    uint64_t totalPackets = 0;
-    uint64_t attackCount = 0;
-    uint64_t benignCount = 0;
 
     // Detection callback
     engine.setResultCallback([&](const DetectionResult& result) {
