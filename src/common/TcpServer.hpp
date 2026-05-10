@@ -14,7 +14,7 @@ public:
     explicit TcpServer(QObject* parent = nullptr);
     ~TcpServer() override;
 
-    bool startListening(quint16 port = 50050);
+    bool startListening(const QString& address = "127.0.0.1", quint16 port = 50050);
     void broadcast(const QByteArray& data);
     int  clientCount() const;
 
