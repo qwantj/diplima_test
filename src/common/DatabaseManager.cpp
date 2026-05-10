@@ -290,8 +290,8 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
         auto bufferedMessages = pendingEventsBuffer_.readAllAndClear();
         if (!bufferedMessages.empty()) {
             db.transaction();
-            transactionActive = true;
-            
+            QSqlQuery q(db);
+            q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
             for (const auto& msg : bufferedMessages) {
                 try {
                     auto j = nlohmann::json::parse(msg.toStdString());
@@ -390,7 +390,6 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
         q.exec();
         ++count;
     }
-    db.commit();
     if (count > 0)
         AppLogger::get()->info("DatabaseManager: flushed {} stats snapshots.", count);
 }
@@ -417,7 +416,6 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
         q.exec();
         ++count;
     }
-    db.commit();
     if (count > 0)
         AppLogger::get()->info("DatabaseManager: flushed {} security events.", count);
 }
