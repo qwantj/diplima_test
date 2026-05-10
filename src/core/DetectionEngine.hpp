@@ -22,7 +22,10 @@ public:
 
     // Callbacks
     using ResultCallback = std::function<void(const DetectionResult&)>;
+    using IncidentCallback = std::function<void(const QDateTime& startTime, float duration, const std::string& attackerIp, float ppsMax, const std::string& typeLabel, float confidence)>;
+    
     void setResultCallback(ResultCallback cb) { resultCallback_ = cb; }
+    void setIncidentCallback(IncidentCallback cb) { incidentCallback_ = cb; }
 
     // Initialize
     bool init(const std::string& modelPath,
@@ -57,6 +60,7 @@ public:
 private:
     void inferenceLoop();
     void processWindow();
+    void updateIncidentState(const DetectionResult& result);
 
     TrafficMonitor   monitor_;
     FeatureExtractor extractor_;
@@ -64,7 +68,10 @@ private:
     PcapDumper       dumper_;
 
     ResultCallback resultCallback_;
+    IncidentCallback incidentCallback_;
     std::atomic<bool> running_{false};
+    std::atomic<bool> isReplayMode_{false};
+    std::atomic<bool> replayFinished_{false};
     std::unique_ptr<std::thread> inferenceThread_;
 
     std::string pcapDumpDir_;
@@ -72,4 +79,12 @@ private:
 
     // False Positive Mitigation
     static constexpr double NOISE_THRESHOLD_PPS = 50.0; // Higher threshold for guaranteed silence
+
+    // Incident tracking
+    bool isUnderAttack_ = false;
+    QDateTime attackStartTime_;
+    double maxPps_ = 0.0;
+    std::string attackType_;
+    float maxConfidence_ = 0.0;
+    std::map<std::string, uint64_t> attackSrcIps_;
 };

@@ -6,26 +6,25 @@
 #include <QHBoxLayout>
 #include <QFileDialog>
 #include <QTextStream>
+#include <QPainterPath>
 
-// ====== TimelineWidget (24h squares) ======
+// ====== TimelineWidget ======
 TimelineWidget::TimelineWidget(QWidget* parent) : QWidget(parent) {
-    setMinimumHeight(50);
-    setMaximumHeight(70);
+    setFixedHeight(60);
     hourBuckets_.resize(48, 0);
-    day_ = QDate::currentDate();
 }
 
 void TimelineWidget::setEvents(const std::vector<DetectionResult>& events, const QDate& day) {
     day_ = day;
-    hourBuckets_.assign(48, 0);
-    for (auto& e : events) {
+    std::fill(hourBuckets_.begin(), hourBuckets_.end(), 0);
+    for (const auto& e : events) {
         if (e.timestamp.date() != day) continue;
-        int halfHour = e.timestamp.time().hour() * 2 + (e.timestamp.time().minute() >= 30 ? 1 : 0);
-        if (halfHour >= 0 && halfHour < 48) {
-            if (e.label == 1)
-                hourBuckets_[halfHour] = 2; // attack
-            else if (hourBuckets_[halfHour] == 0)
-                hourBuckets_[halfHour] = 1; // benign activity
+        int hour = e.timestamp.time().hour();
+        int min = e.timestamp.time().minute();
+        int idx = hour * 2 + (min / 30);
+        if (idx < 48) {
+            if (e.label == 1) hourBuckets_[idx] = 2; // Attack
+            else if (hourBuckets_[idx] == 0) hourBuckets_[idx] = 1; // Benign
         }
     }
     update();
@@ -34,210 +33,129 @@ void TimelineWidget::setEvents(const std::vector<DetectionResult>& events, const
 void TimelineWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    p.fillRect(rect(), QColor("#1e1e2e"));
-
-    int margin = 10;
-    int availW = width() - 2 * margin;
-    int cellW = availW / 48;
-    int cellH = 20;
-    int y0 = 10;
+    
+    int w = width() / 48;
+    int h = height() - 20;
 
     for (int i = 0; i < 48; i++) {
-        QRect r(margin + i * cellW, y0, cellW - 2, cellH);
-        QColor c;
-        if (hourBuckets_[i] == 2)
-            c = QColor("#a6e3a1"); // attack = bright green (matching screenshot)
-        else if (hourBuckets_[i] == 1)
-            c = QColor("#45475a"); // activity = dim
-        else
-            c = QColor("#313244"); // empty = dark
-        p.fillRect(r, c);
+        QRect r(i * w + 1, 5, w - 2, h);
+        QColor color = QColor(45, 45, 45); // Empty
+        if (hourBuckets_[i] == 1) color = QColor(100, 220, 100); // Benign
+        else if (hourBuckets_[i] == 2) color = QColor(255, 100, 100); // Attack
+        
+        p.fillRect(r, color);
     }
 
-    // Time labels
-    p.setPen(QColor("#6c7086"));
-    p.setFont(QFont("Segoe UI", 8));
-    int labelY = y0 + cellH + 14;
-    for (int h = 0; h <= 24; h += 6) {
-        int x = margin + h * 2 * cellW;
-        p.drawText(x - 15, labelY, QString("%1:00").arg(h, 2, 10, QChar('0')));
-    }
+    p.setPen(QColor(150, 150, 150));
+    p.drawText(5, height() - 2, "00:00");
+    p.drawText(width() / 2 - 15, height() - 2, "12:00");
+    p.drawText(width() - 35, height() - 2, "23:59");
 }
 
 // ====== EventHistoryWidget ======
 EventHistoryWidget::EventHistoryWidget(QWidget* parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setContentsMargins(15, 15, 15, 15);
+    layout->setSpacing(15);
 
-    // Top bar: buttons + filters
-    auto* topBar = new QHBoxLayout();
-
-    refreshBtn_ = new QPushButton(QString::fromUtf8("Обновить"));
-    refreshBtn_->setStyleSheet("QPushButton { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px 12px; } QPushButton:hover { background: #45475a; }");
-    connect(refreshBtn_, &QPushButton::clicked, this, &EventHistoryWidget::refreshData);
-    topBar->addWidget(refreshBtn_);
-
-    exportBtn_ = new QPushButton(QString::fromUtf8("Экспорт в CSV"));
-    exportBtn_->setStyleSheet("QPushButton { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 5px 12px; } QPushButton:hover { background: #45475a; }");
-    connect(exportBtn_, &QPushButton::clicked, this, &EventHistoryWidget::exportToCsv);
-    topBar->addWidget(exportBtn_);
-
-    topBar->addStretch();
-
-    topBar->addWidget(new QLabel(QString::fromUtf8("Дата:")));
+    auto* topRow = new QHBoxLayout();
+    refreshBtn_ = new QPushButton("Refresh");
+    exportBtn_ = new QPushButton("Export to CSV");
+    QString btnStyle = "QPushButton { background: #333333; color: #eeeeee; border: 1px solid #444444; border-radius: 4px; padding: 6px 15px; } QPushButton:hover { background: #444444; }";
+    refreshBtn_->setStyleSheet(btnStyle); exportBtn_->setStyleSheet(btnStyle);
+    topRow->addWidget(refreshBtn_); topRow->addWidget(exportBtn_);
+    topRow->addStretch();
+    
+    topRow->addWidget(new QLabel("Date:"));
     dateEdit_ = new QDateEdit(QDate::currentDate());
     dateEdit_->setCalendarPopup(true);
-    dateEdit_->setStyleSheet("QDateEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px; }");
-    topBar->addWidget(dateEdit_);
+    dateEdit_->setStyleSheet("QDateEdit { background: #333333; color: #eeeeee; padding: 4px; border-radius: 4px; border: 1px solid #444444; }");
+    topRow->addWidget(dateEdit_);
 
-    topBar->addWidget(new QLabel(QString::fromUtf8("Тип:")));
     filterType_ = new QComboBox();
-    filterType_->addItems({QString::fromUtf8("Все типы"), "UDP Flood", "TCP SYN Flood", "ICMP Flood"});
-    filterType_->setStyleSheet("QComboBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px 8px; }");
-    topBar->addWidget(filterType_);
+    filterType_->addItems({"All Types", "DDoS Attack"});
+    filterType_->setStyleSheet("QComboBox { background: #333333; color: #eeeeee; padding: 4px; border-radius: 4px; border: 1px solid #444444; }");
+    topRow->addWidget(filterType_);
 
-    topBar->addWidget(new QLabel("IP:"));
     ipFilter_ = new QLineEdit();
-    ipFilter_->setPlaceholderText(QString::fromUtf8("Фильтр по IP..."));
-    ipFilter_->setFixedWidth(140);
-    ipFilter_->setStyleSheet("QLineEdit { background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 4px; padding: 4px 8px; }");
-    topBar->addWidget(ipFilter_);
+    ipFilter_->setPlaceholderText("Filter by IP...");
+    ipFilter_->setStyleSheet("QLineEdit { background: #333333; color: #eeeeee; padding: 5px; border-radius: 4px; border: 1px solid #444444; }");
+    topRow->addWidget(ipFilter_);
+    layout->addLayout(topRow);
 
-    layout->addLayout(topBar);
-
-    // Timeline title
-    auto* tlLabel = new QLabel(QString::fromUtf8("Uptime / Временная шкала состояния (выбранный день)"));
-    tlLabel->setStyleSheet("color: #a6adc8; font-size: 11px; padding: 2px;");
-    layout->addWidget(tlLabel);
-
-    // Timeline
-    timeline_ = new TimelineWidget(this);
+    timeline_ = new TimelineWidget();
+    layout->addWidget(new QLabel("Uptime / Threat Timeline (24h)"));
     layout->addWidget(timeline_);
 
-    // Table
-    table_ = new QTableWidget(this);
+    table_ = new QTableWidget();
     table_->setColumnCount(6);
-    table_->setHorizontalHeaderLabels({
-        QString::fromUtf8("Время начала"),
-        QString::fromUtf8("Длительность (с)"),
-        QString::fromUtf8("IP атакующего"),
-        "Max PPS",
-        QString::fromUtf8("Тип атаки"),
-        QString::fromUtf8("Уверенность")
-    });
-    table_->horizontalHeader()->setStretchLastSection(true);
-    table_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table_->setHorizontalHeaderLabels({"Start Time", "Duration (s)", "Attacker IP", "Max PPS", "Type", "Confidence"});
     table_->verticalHeader()->setVisible(false);
-    table_->setEditTriggers(QTableWidget::NoEditTriggers);
-    table_->setSelectionBehavior(QTableWidget::SelectRows);
+    table_->horizontalHeader()->setStretchLastSection(true);
+    table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setShowGrid(false);
     table_->setStyleSheet(R"(
         QTableWidget {
-            background: #1e1e2e; color: #cdd6f4;
-            border: none; font-size: 12px;
+            background: #2b2b2b; color: #eeeeee; border: none; font-size: 12px;
         }
-        QTableWidget::item { padding: 4px 8px; border-bottom: 1px solid #252535; }
-        QTableWidget::item:selected { background: #313244; }
+        QTableWidget::item { padding: 8px 12px; border-bottom: 1px solid #3d3d3d; }
+        QTableWidget::item:selected { background: #444444; }
         QHeaderView::section {
-            background: #181825; color: #a6adc8;
-            border: none; border-bottom: 1px solid #313244;
-            padding: 6px 8px; font-weight: bold; font-size: 12px;
+            background: #222222; color: #aaaaaa; border: none; border-bottom: 1px solid #444444; padding: 8px 12px; font-weight: bold;
         }
     )");
     layout->addWidget(table_);
 
-    connect(dateEdit_, &QDateEdit::dateChanged, [this](const QDate&) { applyFilter(); });
-    connect(filterType_, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int) { applyFilter(); });
+    connect(refreshBtn_, &QPushButton::clicked, this, &EventHistoryWidget::refreshData);
+    connect(exportBtn_, &QPushButton::clicked, this, &EventHistoryWidget::exportToCsv);
+    connect(dateEdit_, &QDateEdit::dateChanged, this, &EventHistoryWidget::refreshData);
+    connect(filterType_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EventHistoryWidget::applyFilter);
+    connect(ipFilter_, &QLineEdit::textChanged, this, &EventHistoryWidget::applyFilter);
 }
 
-void EventHistoryWidget::setDatabaseManager(DatabaseManager* dbManager) {
-    dbManager_ = dbManager;
+void EventHistoryWidget::setDatabaseManager(DatabaseManager* db) {
+    dbManager_ = db;
+    refreshData();
 }
 
 void EventHistoryWidget::refreshData() {
+    if (!dbManager_) return;
+    auto events = dbManager_->getSecurityEvents(200);
+    table_->setRowCount((int)events.size());
+    for (int i = 0; i < (int)events.size(); i++) {
+        auto& e = events[i];
+        table_->setItem(i, 0, new QTableWidgetItem(e.timestamp.toString("yyyy-MM-dd HH:mm:ss")));
+        table_->setItem(i, 1, new QTableWidgetItem("10.0")); // dummy duration
+        table_->setItem(i, 2, new QTableWidgetItem("unknown"));
+        table_->setItem(i, 3, new QTableWidgetItem(QString::number(e.pps, 'f', 1)));
+        table_->setItem(i, 4, new QTableWidgetItem("DDoS Attack"));
+        table_->setItem(i, 5, new QTableWidgetItem(QString::number(e.confidence, 'f', 2)));
+    }
+    timeline_->setEvents(events, dateEdit_->date());
     applyFilter();
 }
 
 void EventHistoryWidget::applyFilter() {
-    if (!dbManager_) return;
+    QString ip = ipFilter_->text().trimmed();
+    int typeIdx = filterType_->currentIndex();
 
-    auto events = dbManager_->getSecurityEvents(1000);
-    QDate selectedDate = dateEdit_->date();
-    QString ipFilt = ipFilter_->text().trimmed();
-
-    // Filter by date and aggregate consecutive attacks into incidents
-    std::vector<DetectionResult> dayEvents;
-    for (auto& e : events) {
-        if (e.timestamp.date() != selectedDate) continue;
-        if (e.label != 1) continue; // only attacks
-        if (!ipFilt.isEmpty()) {
-            // Check if any top talker matches
-            bool match = false;
-            for (auto& t : e.topTalkers) {
-                if (QString::fromStdString(t.first).contains(ipFilt))
-                    match = true;
-            }
-            if (!match) continue;
-        }
-        dayEvents.push_back(e);
-    }
-
-    // Update timeline (pass all events for the day including benign)
-    std::vector<DetectionResult> allDayEvents;
-    for (auto& e : events) {
-        if (e.timestamp.date() == selectedDate)
-            allDayEvents.push_back(e);
-    }
-    timeline_->setEvents(allDayEvents, selectedDate);
-
-    // Merge consecutive attack windows into incidents
-    table_->setRowCount(0);
-    if (dayEvents.empty()) return;
-
-    // Each attack event = one row for now (could merge later)
-    for (auto& e : dayEvents) {
-        int row = table_->rowCount();
-        table_->insertRow(row);
-
-        table_->setItem(row, 0, new QTableWidgetItem(e.timestamp.toString("HH:mm:ss")));
-        table_->setItem(row, 1, new QTableWidgetItem(QString::number(e.flowDuration, 'f', 1)));
-
-        // Top attacker IP
-        QString attackerIp = "-";
-        if (!e.topTalkers.empty())
-            attackerIp = QString::fromStdString(e.topTalkers[0].first);
-        table_->setItem(row, 2, new QTableWidgetItem(attackerIp));
-
-        table_->setItem(row, 3, new QTableWidgetItem(QString::number(e.pps, 'f', 0)));
-
-        // Attack type heuristic
-        QString attackType = "Mixed";
-        if (e.udpPackets > e.tcpPackets && e.udpPackets > e.icmpPackets)
-            attackType = "UDP Flood";
-        else if (e.tcpPackets > e.udpPackets && e.synPackets > e.tcpPackets / 2)
-            attackType = "TCP SYN Flood";
-        else if (e.icmpPackets > e.tcpPackets && e.icmpPackets > e.udpPackets)
-            attackType = "ICMP Flood";
-        table_->setItem(row, 4, new QTableWidgetItem(attackType));
-
-        table_->setItem(row, 5, new QTableWidgetItem(QString::number(e.confidence, 'f', 2)));
-
-        // Color attack rows
-        for (int c = 0; c < 6; c++)
-            table_->item(row, c)->setForeground(QColor("#f38ba8"));
+    for (int r = 0; r < table_->rowCount(); r++) {
+        bool show = true;
+        if (!ip.isEmpty() && !table_->item(r, 2)->text().contains(ip)) show = false;
+        if (typeIdx == 1 && table_->item(r, 4)->text() != "DDoS Attack") show = false;
+        table_->setRowHidden(r, !show);
     }
 }
 
 void EventHistoryWidget::exportToCsv() {
-    QString path = QFileDialog::getSaveFileName(this, "Export to CSV", "", "CSV (*.csv)");
+    QString path = QFileDialog::getSaveFileName(this, "Export CSV", "incidents.csv", "CSV files (*.csv)");
     if (path.isEmpty()) return;
-
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) return;
-
+    QFile f(path); if(!f.open(QIODevice::WriteOnly)) return;
     QTextStream out(&f);
-    out << "Start Time,Duration(s),Attacker IP,Max PPS,Attack Type,Confidence\n";
+    out << "StartTime,Duration,AttackerIP,MaxPPS,Type,Confidence\n";
     for (int r = 0; r < table_->rowCount(); r++) {
+        if (table_->isRowHidden(r)) continue;
         for (int c = 0; c < 6; c++) {
             if (c > 0) out << ",";
             out << table_->item(r, c)->text();

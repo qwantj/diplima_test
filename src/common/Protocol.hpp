@@ -9,12 +9,13 @@
 #include <vector>
 #include <map>
 
-// ---- Core data structures ----
+// ---- Core data structures (Global Namespace for compatibility) ----
 
 struct DetectionResult {
-    int         label        = 0;        // 0=Benign, 1=Attack
-    float       confidence   = 0.0f;
-    double      pps          = 0.0;
+    QDateTime   timestamp;
+    int         label = 0; // 0: Benign, 1: Attack
+    float       confidence = 0.0f;
+    double      pps = 0.0;
     uint64_t    totalPackets = 0;
     uint64_t    tcpPackets   = 0;
     uint64_t    udpPackets   = 0;
@@ -25,6 +26,9 @@ struct DetectionResult {
     uint64_t    rstPackets   = 0;
     uint64_t    totalBytes   = 0;
     double      flowDuration = 0.0;
+    uint64_t    droppedPackets = 0;
+    size_t      queueSize    = 0;
+    double      inferenceLatencyMs = 0.0;
 
     // CICIDS features (8)
     std::vector<double> features;
@@ -37,7 +41,6 @@ struct DetectionResult {
     std::vector<std::pair<std::string, uint64_t>> topTargets;
     uint32_t uniqueSourceCount = 0;
 
-    QDateTime   timestamp;
     int         sessionId = 0;
     std::string modelName;
 };
@@ -57,19 +60,21 @@ struct SessionInfo {
 
 namespace Protocol {
 
+const std::string PROTOCOL_VERSION = "2.2";
+
 // Message types
 constexpr const char* MSG_STATS       = "stats";
 constexpr const char* MSG_SNAPSHOT    = "snapshot";
-constexpr const char* MSG_CMD        = "cmd";
-constexpr const char* MSG_NOTIFY     = "notify";
-constexpr const char* MSG_BUFFER     = "buffer";
+constexpr const char* MSG_CMD         = "cmd";
+constexpr const char* MSG_NOTIFY      = "notify";
+constexpr const char* MSG_BUFFER      = "buffer";
 
 // Commands
-constexpr const char* CMD_LOAD_PCAP  = "load_pcap";
-constexpr const char* CMD_STOP_REPLAY= "stop_replay";
-constexpr const char* CMD_LOAD_MODEL = "load_model";
-constexpr const char* CMD_CONFIG_BPF = "config_bpf";
-constexpr const char* CMD_STOP       = "stop";
+constexpr const char* CMD_LOAD_PCAP   = "load_pcap";
+constexpr const char* CMD_STOP_REPLAY = "stop_replay";
+constexpr const char* CMD_LOAD_MODEL  = "load_model";
+constexpr const char* CMD_CONFIG_BPF  = "config_bpf";
+constexpr const char* CMD_STOP        = "stop";
 
 // Serialize DetectionResult to JSON
 nlohmann::json serializeResult(const DetectionResult& r);

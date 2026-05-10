@@ -32,6 +32,8 @@ bool DetectionEngine::startLive(const std::string& interfaceName) {
     if (!monitor_.startCapture(interfaceName))
         return false;
 
+    isReplayMode_ = false;
+    replayFinished_ = false;
     running_ = true;
     inferenceThread_ = std::make_unique<std::thread>(&DetectionEngine::inferenceLoop, this);
     return true;
@@ -40,7 +42,8 @@ bool DetectionEngine::startLive(const std::string& interfaceName) {
 bool DetectionEngine::startReplay(const std::string& pcapPath) {
     if (running_) stop();
 
-    // Replay runs in a separate thread, inference loop processes packets
+    isReplayMode_ = true;
+    replayFinished_ = false;
     running_ = true;
     inferenceThread_ = std::make_unique<std::thread>([this, pcapPath]() {
         // Start replay (this blocks until done)
@@ -53,6 +56,8 @@ bool DetectionEngine::startReplay(const std::string& pcapPath) {
 
         if (replayThread.joinable())
             replayThread.join();
+        
+        AppLogger::get()->info("DetectionEngine: Replay thread joined.");
     });
 
     return true;
@@ -60,6 +65,7 @@ bool DetectionEngine::startReplay(const std::string& pcapPath) {
 
 void DetectionEngine::stop() {
     running_ = false;
+    isReplayMode_ = false;
     monitor_.stopCapture();
 
     if (inferenceThread_ && inferenceThread_->joinable())
@@ -112,6 +118,12 @@ void DetectionEngine::inferenceLoop() {
                 if (dumpEnabled_)
                     dumper_.writePacket(pkt, 0); // label updated after inference
             } else {
+                // If in replay mode and monitor stopped capturing, and queue is empty, we are done
+                if (isReplayMode_ && !monitor_.isCapturing() && monitor_.queueSize() == 0) {
+                    replayFinished_ = true;
+                    running_ = false;
+                    break;
+                }
                 // No packets available, short sleep
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
@@ -131,6 +143,10 @@ void DetectionEngine::processWindow() {
     result.timestamp = QDateTime::currentDateTime();
     result.modelName = inferencer_.modelName();
     extractor_.fillTelemetry(result);
+    
+    // Fill monitor-specific metrics
+    result.droppedPackets = monitor_.droppedPackets();
+    result.queueSize = monitor_.queueSize();
 
     // Skip inference if window has no packets
     if (result.totalPackets == 0) {
@@ -158,14 +174,72 @@ void DetectionEngine::processWindow() {
 
     result.features = features;
 
-    // [Step 3] AI Inference
+    // ML Inference
     std::vector<float> featFloat(features.begin(), features.end());
+
+    auto startInfer = std::chrono::steady_clock::now();
     auto [label, confidence] = inferencer_.predict(featFloat);
-    
+    auto endInfer = std::chrono::steady_clock::now();
+
+    result.inferenceLatencyMs = std::chrono::duration<double, std::milli>(endInfer - startInfer).count();
     result.label = label;
     result.confidence = confidence;
+
+
+    // --- Phase 2: Incident Tracking ---
+    updateIncidentState(result);
 
     // Callback
     if (resultCallback_)
         resultCallback_(result);
+}
+
+void DetectionEngine::updateIncidentState(const DetectionResult& result) {
+    bool currentlyAttacking = (result.label == 1);
+
+    if (!isUnderAttack_ && currentlyAttacking) {
+        // Transition: Normal -> Attack
+        isUnderAttack_ = true;
+        attackStartTime_ = result.timestamp;
+        maxPps_ = result.pps;
+        maxConfidence_ = result.confidence;
+        attackType_ = "DDoS Attack"; // General label, could be more specific
+        attackSrcIps_.clear();
+        for (auto& [ip, count] : result.topTalkers) {
+            attackSrcIps_[ip] += count;
+        }
+        AppLogger::get()->info("Incident Tracking: Attack started at {}", 
+            attackStartTime_.toString("HH:mm:ss").toStdString());
+    }
+    else if (isUnderAttack_ && currentlyAttacking) {
+        // Continue: Attack ongoing
+        maxPps_ = std::max(maxPps_, result.pps);
+        maxConfidence_ = std::max(maxConfidence_, result.confidence);
+        for (auto& [ip, count] : result.topTalkers) {
+            attackSrcIps_[ip] += count;
+        }
+    }
+    else if (isUnderAttack_ && !currentlyAttacking) {
+        // Transition: Attack -> Normal
+        isUnderAttack_ = false;
+        float duration = attackStartTime_.secsTo(result.timestamp);
+        
+        // Determine top attacker IP
+        std::string topAttacker = "unknown";
+        uint64_t maxPkts = 0;
+        for (auto& [ip, count] : attackSrcIps_) {
+            if (count > maxPkts) {
+                maxPkts = count;
+                topAttacker = ip;
+            }
+        }
+
+        AppLogger::get()->info("Incident Tracking: Attack ended. Duration: {}s, Max PPS: {:.0f}, Top Attacker: {}", 
+            duration, maxPps_, topAttacker);
+
+        if (incidentCallback_) {
+            incidentCallback_(attackStartTime_, duration, topAttacker, 
+                             (float)maxPps_, attackType_, maxConfidence_);
+        }
+    }
 }

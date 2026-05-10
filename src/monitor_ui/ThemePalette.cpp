@@ -8,35 +8,34 @@ void ThemePalette::apply(ThemeMode mode) {
 
     QPalette pal;
     if (mode == ThemeMode::Dark) {
-        pal.setColor(QPalette::Window, QColor(30, 30, 46));
-        pal.setColor(QPalette::WindowText, QColor(205, 214, 244));
-        pal.setColor(QPalette::Base, QColor(24, 24, 37));
-        pal.setColor(QPalette::AlternateBase, QColor(30, 30, 46));
-        pal.setColor(QPalette::ToolTipBase, QColor(49, 50, 68));
-        pal.setColor(QPalette::ToolTipText, QColor(205, 214, 244));
-        pal.setColor(QPalette::Text, QColor(205, 214, 244));
-        pal.setColor(QPalette::Button, QColor(49, 50, 68));
-        pal.setColor(QPalette::ButtonText, QColor(205, 214, 244));
+        pal.setColor(QPalette::Window, QColor(33, 33, 33));
+        pal.setColor(QPalette::WindowText, QColor(210, 210, 210));
+        pal.setColor(QPalette::Base, QColor(24, 24, 24));
+        pal.setColor(QPalette::AlternateBase, QColor(33, 33, 33));
+        pal.setColor(QPalette::ToolTipBase, QColor(45, 45, 45));
+        pal.setColor(QPalette::ToolTipText, Qt::white);
+        pal.setColor(QPalette::Text, QColor(210, 210, 210));
+        pal.setColor(QPalette::Button, QColor(50, 50, 50));
+        pal.setColor(QPalette::ButtonText, Qt::white);
         pal.setColor(QPalette::Link, QColor(137, 180, 250));
-        pal.setColor(QPalette::Highlight, QColor(137, 180, 250));
-        pal.setColor(QPalette::HighlightedText, QColor(30, 30, 46));
+        pal.setColor(QPalette::Highlight, QColor(60, 60, 60));
+        pal.setColor(QPalette::HighlightedText, Qt::white);
     }
     else if (mode == ThemeMode::Light) {
-        pal.setColor(QPalette::Window, QColor(239, 241, 245));
-        pal.setColor(QPalette::WindowText, QColor(76, 79, 105));
-        pal.setColor(QPalette::Base, QColor(255, 255, 255));
-        pal.setColor(QPalette::AlternateBase, QColor(239, 241, 245));
-        pal.setColor(QPalette::ToolTipBase, QColor(204, 208, 218));
-        pal.setColor(QPalette::ToolTipText, QColor(76, 79, 105));
-        pal.setColor(QPalette::Text, QColor(76, 79, 105));
-        pal.setColor(QPalette::Button, QColor(204, 208, 218));
-        pal.setColor(QPalette::ButtonText, QColor(76, 79, 105));
-        pal.setColor(QPalette::Link, QColor(30, 102, 245));
-        pal.setColor(QPalette::Highlight, QColor(30, 102, 245));
+        pal.setColor(QPalette::Window, QColor(240, 240, 240));
+        pal.setColor(QPalette::WindowText, Qt::black);
+        pal.setColor(QPalette::Base, Qt::white);
+        pal.setColor(QPalette::AlternateBase, QColor(240, 240, 240));
+        pal.setColor(QPalette::ToolTipBase, Qt::white);
+        pal.setColor(QPalette::ToolTipText, Qt::black);
+        pal.setColor(QPalette::Text, Qt::black);
+        pal.setColor(QPalette::Button, Qt::white);
+        pal.setColor(QPalette::ButtonText, Qt::black);
+        pal.setColor(QPalette::Link, QColor(0, 0, 238));
+        pal.setColor(QPalette::Highlight, QColor(0, 120, 215));
         pal.setColor(QPalette::HighlightedText, Qt::white);
     }
     else {
-        // System default
         pal = QApplication::style()->standardPalette();
     }
 
@@ -45,53 +44,33 @@ void ThemePalette::apply(ThemeMode mode) {
 
 ThemeMode ThemePalette::current() { return currentMode_; }
 
-QColor ThemePalette::chartBenign() {
-    return currentMode_ == ThemeMode::Light ? QColor(64, 160, 43) : QColor(166, 227, 161);
-}
-QColor ThemePalette::chartAttack() {
-    return currentMode_ == ThemeMode::Light ? QColor(210, 15, 57) : QColor(243, 139, 168);
-}
-QColor ThemePalette::chartTcp() {
-    return currentMode_ == ThemeMode::Light ? QColor(30, 102, 245) : QColor(137, 180, 250);
-}
-QColor ThemePalette::chartUdp() {
-    return currentMode_ == ThemeMode::Light ? QColor(223, 142, 29) : QColor(249, 226, 175);
-}
-QColor ThemePalette::chartIcmp() {
-    return currentMode_ == ThemeMode::Light ? QColor(136, 57, 239) : QColor(203, 166, 247);
-}
-QColor ThemePalette::chartPps() {
-    return currentMode_ == ThemeMode::Light ? QColor(4, 165, 229) : QColor(116, 199, 236);
-}
+QColor ThemePalette::chartBenign() { return QColor(100, 220, 100); }
+QColor ThemePalette::chartAttack() { return QColor(255, 100, 100); }
+QColor ThemePalette::chartTcp()    { return QColor(100, 150, 255); }
+QColor ThemePalette::chartUdp()    { return QColor(255, 200, 100); }
+QColor ThemePalette::chartIcmp()   { return QColor(200, 100, 255); }
+QColor ThemePalette::chartPps()    { return QColor(100, 200, 255); }
 
 QColor ThemePalette::background() {
-    return currentMode_ == ThemeMode::Light ? QColor(239, 241, 245) : QColor(30, 30, 46);
+    return currentMode_ == ThemeMode::Light ? QColor(240, 240, 240) : QColor(33, 33, 33);
 }
 QColor ThemePalette::cardBackground() {
-    return currentMode_ == ThemeMode::Light ? QColor(255, 255, 255) : QColor(49, 50, 68);
+    return currentMode_ == ThemeMode::Light ? Qt::white : QColor(44, 44, 44);
 }
 QColor ThemePalette::textPrimary() {
-    return currentMode_ == ThemeMode::Light ? QColor(76, 79, 105) : QColor(205, 214, 244);
+    return currentMode_ == ThemeMode::Light ? Qt::black : QColor(230, 230, 230);
 }
 QColor ThemePalette::textSecondary() {
-    return currentMode_ == ThemeMode::Light ? QColor(124, 127, 147) : QColor(166, 173, 200);
+    return currentMode_ == ThemeMode::Light ? QColor(100, 100, 100) : QColor(160, 160, 160);
 }
-QColor ThemePalette::accent() {
-    return currentMode_ == ThemeMode::Light ? QColor(30, 102, 245) : QColor(137, 180, 250);
-}
-QColor ThemePalette::danger() {
-    return currentMode_ == ThemeMode::Light ? QColor(210, 15, 57) : QColor(243, 139, 168);
-}
-QColor ThemePalette::warning() {
-    return currentMode_ == ThemeMode::Light ? QColor(223, 142, 29) : QColor(249, 226, 175);
-}
-QColor ThemePalette::success() {
-    return currentMode_ == ThemeMode::Light ? QColor(64, 160, 43) : QColor(166, 227, 161);
-}
+QColor ThemePalette::accent()  { return QColor(100, 220, 100); }
+QColor ThemePalette::danger()  { return QColor(255, 100, 100); }
+QColor ThemePalette::warning() { return QColor(255, 200, 100); }
+QColor ThemePalette::success() { return QColor(100, 220, 100); }
 
-QColor ThemePalette::heatmapLow()  { return QColor(30, 102, 245, 40); }
-QColor ThemePalette::heatmapMid()  { return QColor(249, 226, 175, 128); }
-QColor ThemePalette::heatmapHigh() { return QColor(243, 139, 168, 220); }
+QColor ThemePalette::heatmapLow()  { return QColor(100, 150, 255, 50); }
+QColor ThemePalette::heatmapMid()  { return QColor(255, 200, 100, 150); }
+QColor ThemePalette::heatmapHigh() { return QColor(255, 100, 100, 220); }
 
 std::vector<QColor> ThemePalette::chartPalette() {
     return {chartTcp(), chartUdp(), chartIcmp(), chartPps(),

@@ -184,6 +184,7 @@ void FeatureExtractor::fillTelemetry(DetectionResult& result) const {
     result.pps = result.totalPackets / deltaT;
     result.uniqueSourceCount = (uint32_t)uniqueSources_.size();
     result.packetSizeHistogram = sizeHistogram_;
+    // Drop rate will be filled by DetectionEngine as it has access to monitor
 
     // Protocol breakdown (percentages)
     double total = (double)result.totalPackets;

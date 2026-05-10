@@ -6,6 +6,7 @@
 #include "common/Protocol.hpp"
 #include "common/TcpServer.hpp"
 #include "common/DatabaseManager.hpp"
+#include "common/ConfigManager.hpp"
 #include "common/SystemMetricsCollector.hpp"
 #include "core/DetectionEngine.hpp"
 
@@ -68,30 +69,33 @@ int main(int argc, char* argv[]) {
     app.setApplicationName("ddos_collector");
     app.setApplicationVersion("2.2");
 
+    AppLogger::init("ddos_collector.log");
+
+    // Load configuration
+    AppConfig config;
+    ConfigManager::load("config.json", config);
+
     QCommandLineParser parser;
     parser.setApplicationDescription("DDoS Detection Collector");
     parser.addHelpOption();
     parser.addVersionOption();
 
     parser.addOptions({
-        {{"i", "interface"}, "Network interface name", "name"},
+        {{"i", "interface"}, "Network interface name", "name", QString::fromStdString(config.defaultInterface)},
         {{"f", "pcap"},     "Pcap file to replay", "file"},
-        {{"m", "model"},    "ONNX model path", "path", "models/rf_model.onnx"},
-        {{"e", "ep"},       "Execution provider (cpu|cuda|dml)", "ep", "cpu"},
+        {{"m", "model"},    "ONNX model path", "path", QString::fromStdString(config.defaultModel)},
+        {{"e", "ep"},       "Execution provider (cpu|cuda|dml)", "ep", QString::fromStdString(config.defaultEp)},
         {"list-interfaces", "List available network interfaces"},
-        {"tcp-port",        "TCP server port", "port", "50050"},
-        {"db-host",         "PostgreSQL host", "host", "localhost"},
-        {"db-port",         "PostgreSQL port", "port", "5432"},
-        {"db-name",         "Database name", "name", "ddos_detection_db"},
-        {"db-user",         "Database user", "user", "postgres"},
-        {"db-password",     "Database password", "pass", "qwerty"},
+        {"tcp-port",        "TCP server port", "port", QString::number(config.tcpPort)},
+        {"db-host",         "PostgreSQL host", "host", QString::fromStdString(config.dbHost)},
+        {"db-port",         "PostgreSQL port", "port", QString::number(config.dbPort)},
+        {"db-name",         "Database name", "name", QString::fromStdString(config.dbName)},
+        {"db-user",         "Database user", "user", QString::fromStdString(config.dbUser)},
+        {"db-password",     "Database password", "pass", QString::fromStdString(config.dbPass)},
         {"pcap-dir",        "Directory for pcap dumps", "dir"},
     });
 
     parser.process(app);
-
-    // Init logging
-    AppLogger::init("ddos_collector.log");
 
     // Register meta types
     qRegisterMetaType<DetectionResult>();
@@ -164,11 +168,69 @@ int main(int argc, char* argv[]) {
         parser.value("db-password"));
 
     int sessionId = -1;
+    auto createNewSession = [&](const QString& iface, const QString& model) {
+        if (dbConnected) {
+            if (sessionId > 0) {
+                // we should close previous session, but for simplicity here we just create new one
+                // ideally we'd track packets per session
+            }
+            sessionId = dbManager.createSession(iface, model);
+            AppLogger::get()->info("Created new session ID: {}", sessionId);
+        }
+    };
+
     if (dbConnected) {
-        sessionId = dbManager.createSession(
+        createNewSession(
             parser.isSet("interface") ? parser.value("interface") : "pcap_replay",
             QString::fromStdString(engine.modelInferencer().modelName()));
     }
+
+    auto runReplayMonitor = [&]() {
+        QTimer::singleShot(500, [&]() {
+            QTimer* checkTimer = new QTimer(&app);
+            QObject::connect(checkTimer, &QTimer::timeout, [&, checkTimer]() {
+                if (!engine.isRunning()) {
+                    AppLogger::get()->info("Replay complete. Sending notification.");
+                    auto notifyMsg = Protocol::serializeNotify("replay_done");
+                    tcpServer.broadcast(notifyMsg);
+                    checkTimer->stop();
+                    checkTimer->deleteLater();
+                }
+            });
+            checkTimer->start(1000);
+        });
+    };
+
+    // Handle incoming commands
+    QObject::connect(&tcpServer, &TcpServer::commandReceived, [&](const std::string& cmd, const nlohmann::json& data) {
+        if (cmd == Protocol::CMD_LOAD_PCAP) {
+            std::string path = data.value("path", "");
+            if (!path.empty()) {
+                AppLogger::get()->info("Command: load_pcap '{}'", path);
+                engine.stop();
+                createNewSession(QString::fromStdString(path), 
+                                 QString::fromStdString(engine.modelInferencer().modelName()));
+                if (engine.startReplay(path)) {
+                    runReplayMonitor();
+                }
+            }
+        } else if (cmd == Protocol::CMD_LOAD_MODEL) {
+            std::string path = data.value("path", "");
+            if (!path.empty()) {
+                AppLogger::get()->info("Command: load_model '{}'", path);
+                engine.hotSwapModel(path);
+            }
+        } else if (cmd == Protocol::CMD_CONFIG_BPF) {
+            bool enable = data.value("enable", false);
+            // Example: if enabled, block top talker from previous window? 
+            // For now just logging or setting a simple BPF
+            AppLogger::get()->info("Command: config_bpf enabled={}", enable);
+        } else if (cmd == Protocol::CMD_STOP) {
+            AppLogger::get()->info("Command: stop");
+            g_running = false;
+            QCoreApplication::quit();
+        }
+    });
 
     // Enable pcap dump if requested
     if (parser.isSet("pcap-dir")) {
@@ -218,6 +280,15 @@ int main(int argc, char* argv[]) {
             r.tcpPackets, r.udpPackets, r.icmpPackets);
     });
 
+    // Incident callback for DB logging
+    engine.setIncidentCallback([&](const QDateTime& start, float dur, const std::string& ip, 
+                                   float ppsMax, const std::string& type, float conf) {
+        if (dbConnected) {
+            dbManager.enqueueSecurityEvent(sessionId, start, dur, 
+                QString::fromStdString(ip), ppsMax, QString::fromStdString(type), conf);
+        }
+    });
+
     // Start detection
     if (parser.isSet("pcap")) {
         std::string pcapPath = parser.value("pcap").toStdString();
@@ -225,21 +296,7 @@ int main(int argc, char* argv[]) {
             AppLogger::get()->error("Failed to start pcap replay.");
             return 1;
         }
-
-        // Wait for replay to finish
-        QTimer::singleShot(500, [&]() {
-            QTimer* checkTimer = new QTimer(&app);
-            QObject::connect(checkTimer, &QTimer::timeout, [&, checkTimer]() {
-                if (!engine.isRunning()) {
-                    AppLogger::get()->info("Replay complete. Sending notification.");
-                    auto notifyMsg = Protocol::serializeNotify("replay_done");
-                    tcpServer.broadcast(notifyMsg);
-                    checkTimer->stop();
-                    checkTimer->deleteLater();
-                }
-            });
-            checkTimer->start(1000);
-        });
+        runReplayMonitor();
     } else {
         std::string rawIface = parser.value("interface").toStdString();
         std::string iface = resolveNetworkInterface(rawIface);

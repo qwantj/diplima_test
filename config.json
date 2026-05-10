@@ -1,0 +1,20 @@
+{
+    "collector_host": "localhost",
+    "tcp_port": 50050,
+    "database": {
+        "host": "localhost",
+        "port": 5432,
+        "name": "ddos_detection_db",
+        "user": "postgres",
+        "password": "qwerty"
+    },
+    "ml": {
+        "default_model": "models/rf_model.onnx",
+        "default_ep": "cpu",
+        "window_sec": 2.0
+    },
+    "network": {
+        "default_interface": "",
+        "max_queue_size": 500000
+    }
+}

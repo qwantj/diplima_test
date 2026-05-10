@@ -37,6 +37,9 @@ public:
     // Event insertion (queued, async)
     void enqueueEvent(const DetectionResult& result);
     void enqueueSnapshot(float pps, uint64_t totalPackets, int currentLabel, int sessionId);
+    void enqueueSecurityEvent(int sessionId, const QDateTime& startTime, float duration, 
+                              const QString& attackerIp, float ppsMax, 
+                              const QString& typeLabel, float confidence);
 
     // History retrieval
     std::vector<DetectionResult> getEventsForSession(int sessionId);
@@ -48,6 +51,7 @@ private:
     void stopAsyncWriter();
     void flushEvents(QSqlDatabase& db);
     void flushSnapshots(QSqlDatabase& db);
+    void flushSecurityEvents(QSqlDatabase& db);
 
     QSqlDatabase db_;
     QString connectionName_;
@@ -66,9 +70,19 @@ private:
         int sessionId;
         QDateTime timestamp;
     };
+    struct SecurityEventEntry {
+        int sessionId;
+        QDateTime startTime;
+        float duration;
+        QString attackerIp;
+        float ppsMax;
+        QString typeLabel;
+        float confidence;
+    };
 
     moodycamel::ConcurrentQueue<EventEntry> eventQueue_;
     moodycamel::ConcurrentQueue<SnapshotEntry> snapshotQueue_;
+    moodycamel::ConcurrentQueue<SecurityEventEntry> securityEventQueue_;
     std::unique_ptr<QThread> writerThread_;
     std::unique_ptr<QTimer>  flushTimer_;
     QMutex dbMutex_;

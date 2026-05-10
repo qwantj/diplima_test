@@ -93,10 +93,11 @@ void TcpServer::onReadyRead() {
 
         auto [type, payload] = Protocol::parseMessage(line);
         if (type == Protocol::MSG_CMD) {
-            // Forward commands to be handled by collector
-            AppLogger::get()->info("TcpServer: received command: {}",
-                payload.value("cmd", "unknown"));
-            emit newConnection(); // reuse signal as "command received"
+            std::string cmd = payload.value("cmd", "");
+            nlohmann::json data = payload.value("data", nlohmann::json::object());
+            
+            AppLogger::get()->info("TcpServer: received command: {}", cmd);
+            emit commandReceived(cmd, data);
         }
     }
 }

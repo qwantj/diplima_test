@@ -6,6 +6,7 @@
 #include <QByteArray>
 #include <vector>
 #include <deque>
+#include <nlohmann/json.hpp>
 
 class TcpServer : public QTcpServer {
     Q_OBJECT
@@ -22,6 +23,9 @@ public:
 
 protected:
     void incomingConnection(qintptr socketDescriptor) override;
+
+signals:
+    void commandReceived(const std::string& cmd, const nlohmann::json& data);
 
 private slots:
     void onClientDisconnected();

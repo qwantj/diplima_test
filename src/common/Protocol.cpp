@@ -7,6 +7,7 @@ namespace Protocol {
 
 nlohmann::json serializeResult(const DetectionResult& r) {
     nlohmann::json j;
+    j["version"]     = PROTOCOL_VERSION;
     j["label"]       = r.label;
     j["confidence"]  = r.confidence;
     j["pps"]         = r.pps;
@@ -20,6 +21,9 @@ nlohmann::json serializeResult(const DetectionResult& r) {
     j["rst"]         = r.rstPackets;
     j["total_bytes"] = r.totalBytes;
     j["flow_duration"]= r.flowDuration;
+    j["dropped_packets"] = r.droppedPackets;
+    j["queue_size"] = r.queueSize;
+    j["inference_latency_ms"] = r.inferenceLatencyMs;
     j["features"]    = r.features;
     j["model"]       = r.modelName;
     j["session_id"]  = r.sessionId;
@@ -64,6 +68,9 @@ DetectionResult deserializeResult(const nlohmann::json& j) {
     r.rstPackets   = j.value("rst", (uint64_t)0);
     r.totalBytes   = j.value("total_bytes", (uint64_t)0);
     r.flowDuration = j.value("flow_duration", 0.0);
+    r.droppedPackets = j.value("dropped_packets", (uint64_t)0);
+    r.queueSize    = j.value("queue_size", (size_t)0);
+    r.inferenceLatencyMs = j.value("inference_latency_ms", 0.0);
     r.modelName    = j.value("model", std::string());
     r.sessionId    = j.value("session_id", 0);
     r.uniqueSourceCount = j.value("unique_sources", (uint32_t)0);
@@ -94,6 +101,7 @@ DetectionResult deserializeResult(const nlohmann::json& j) {
 
 QByteArray serializeSnapshot(float pps, uint64_t totalPackets, int currentLabel) {
     nlohmann::json j;
+    j["version"]       = PROTOCOL_VERSION;
     j["type"]          = MSG_SNAPSHOT;
     j["pps"]           = pps;
     j["total_packets"] = totalPackets;
@@ -103,6 +111,7 @@ QByteArray serializeSnapshot(float pps, uint64_t totalPackets, int currentLabel)
 
 QByteArray serializeStats(const DetectionResult& r, uint64_t totalPackets) {
     nlohmann::json j;
+    j["version"]       = PROTOCOL_VERSION;
     j["type"]          = MSG_STATS;
     j["total_packets"] = totalPackets;
     j["data"]          = serializeResult(r);
@@ -111,6 +120,7 @@ QByteArray serializeStats(const DetectionResult& r, uint64_t totalPackets) {
 
 QByteArray serializeCommand(const std::string& cmd, const nlohmann::json& data) {
     nlohmann::json j;
+    j["version"] = PROTOCOL_VERSION;
     j["type"] = MSG_CMD;
     j["cmd"]  = cmd;
     if (!data.is_null()) j["data"] = data;
@@ -119,6 +129,7 @@ QByteArray serializeCommand(const std::string& cmd, const nlohmann::json& data) 
 
 QByteArray serializeNotify(const std::string& event, const nlohmann::json& data) {
     nlohmann::json j;
+    j["version"] = PROTOCOL_VERSION;
     j["type"]  = MSG_NOTIFY;
     j["event"] = event;
     if (!data.is_null()) j["data"] = data;

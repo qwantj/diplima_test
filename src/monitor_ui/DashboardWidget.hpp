@@ -139,6 +139,14 @@ private:
     QValueAxis* confAxis_ = nullptr;
     InteractiveChartView* ppsChartView_ = nullptr;
 
+    // Layer checkboxes
+    QCheckBox* cbPps_ = nullptr;
+    QCheckBox* cbTcp_ = nullptr;
+    QCheckBox* cbUdp_ = nullptr;
+    QCheckBox* cbIcmp_ = nullptr;
+    QCheckBox* cbOther_ = nullptr;
+    QCheckBox* cbConf_ = nullptr;
+
     // Donut charts (CPU, RAM, Traffic Ratio)
     QChart* cpuChart_ = nullptr;
     QPieSeries* cpuPie_ = nullptr;

@@ -11,6 +11,8 @@
 #include <QPushButton>
 #include <QComboBox>
 #include <QSystemTrayIcon>
+#include <QMenu>
+#include <QAction>
 #include <QMessageBox>
 #include <QFileDialog>
 #include <QSettings>
@@ -22,6 +24,7 @@
 #include "common/AppLogger.hpp"
 #include "common/DataBridge.hpp"
 #include "common/Protocol.hpp"
+#include "common/ConfigManager.hpp"
 #include "monitor_ui/DashboardWidget.hpp"
 #include "monitor_ui/LogWidget.hpp"
 #include "monitor_ui/SessionWidget.hpp"
@@ -54,12 +57,37 @@ private:
     QListWidget*    sidebarList_ = nullptr;
 
     QSystemTrayIcon* trayIcon_ = nullptr;
-    QTimer* sessionPollTimer_ = nullptr;
+    QMenu*           trayMenu_ = nullptr;
+    QAction*         pauseAction_ = nullptr;
+    QTimer*          sessionPollTimer_ = nullptr;
+
+    QIcon            iconNormal_;
+    QIcon            iconAttack_;
 };
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("DDoS Dashboard");
     resize(1280, 800);
+
+    // Load configuration
+    AppConfig config;
+    ConfigManager::load("config.json", config);
+
+    // Prepare icons
+    iconNormal_ = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
+    QPixmap attackPixmap(32, 32);
+    attackPixmap.fill(Qt::transparent);
+    {
+        QPainter p(&attackPixmap);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setBrush(QColor("#f38ba8")); // Red
+        p.setPen(Qt::NoPen);
+        p.drawEllipse(2, 2, 28, 28);
+        p.setPen(QPen(Qt::white, 3));
+        p.drawLine(10, 10, 22, 22);
+        p.drawLine(10, 22, 22, 10);
+    }
+    iconAttack_ = QIcon(attackPixmap);
 
     setupUI();
     setupSystemTray();
@@ -68,9 +96,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     dataBridge_ = new DataBridge(this);
     setupConnections();
 
-    // Connect to collector
-    dataBridge_->connectToCollector("localhost", 50050);
-    dataBridge_->connectToDatabase("localhost", 5432, "ddos_detection_db", "postgres", "qwerty");
+    // Connect using config
+    dataBridge_->connectToCollector(QString::fromStdString(config.collectorHost), config.tcpPort);
+    dataBridge_->connectToDatabase(QString::fromStdString(config.dbHost), config.dbPort,
+                                   QString::fromStdString(config.dbName),
+                                   QString::fromStdString(config.dbUser),
+                                   QString::fromStdString(config.dbPass));
 
     // Session poll timer
     sessionPollTimer_ = new QTimer(this);
@@ -87,8 +118,8 @@ void MainWindow::setupUI() {
 
     // Green Header Bar
     auto* headerBar = new QWidget();
-    headerBar->setFixedHeight(4);
-    headerBar->setStyleSheet("background: #a6e3a1;");
+    headerBar->setFixedHeight(3);
+    headerBar->setStyleSheet("background: #66ff66;");
     mainLayout->addWidget(headerBar);
 
     auto* contentLayout = new QHBoxLayout();
@@ -98,67 +129,68 @@ void MainWindow::setupUI() {
 
     // Sidebar
     sidebarList_ = new QListWidget();
-    sidebarList_->setFixedWidth(145);
+    sidebarList_->setFixedWidth(160);
     sidebarList_->setStyleSheet(R"(
         QListWidget {
-            background: #11111b; border: none; padding: 12px 0px;
-            font-size: 13px; color: #cdd6f4; outline: none;
+            background: #1e1e1e; border: none; padding: 0px;
+            font-size: 13px; color: #bbbbbb; outline: none;
         }
         QListWidget::item {
-            padding: 10px 12px; margin: 4px 10px; border-radius: 6px;
+            padding: 15px 18px; border-left: 4px solid transparent;
         }
         QListWidget::item:selected {
-            background: #313244; color: #89b4fa;
+            background: #333333; color: #66ff66; border-left: 4px solid #66ff66;
         }
-        QListWidget::item:hover {
-            background: #1e1e2e;
+        QListWidget::item:hover:!selected {
+            background: #2a2a2a;
         }
     )");
 
-    sidebarList_->setIconSize(QSize(16, 16));
+    sidebarList_->setIconSize(QSize(22, 22));
 
     auto addSidebarItem = [this](const QString& text, const QColor& color, int iconType) {
         auto* item = new QListWidgetItem(sidebarList_);
-        QPixmap pixmap(16, 16);
+        QPixmap pixmap(24, 24);
         pixmap.fill(Qt::transparent);
         QPainter p(&pixmap);
         p.setRenderHint(QPainter::Antialiasing);
         p.setBrush(color);
         p.setPen(Qt::NoPen);
         
-        if (iconType == 0) p.drawRect(2, 2, 12, 12); // Square (Dashboard)
-        else if (iconType == 1) p.drawRoundedRect(2, 4, 12, 8, 2, 2); // Box (Analytics)
-        else if (iconType == 2) p.drawRoundedRect(4, 2, 8, 12, 1, 1); // Document (Log)
-        else if (iconType == 3) { // Shield (Security)
-            QPolygon poly;
-            poly << QPoint(8, 2) << QPoint(14, 4) << QPoint(14, 10) << QPoint(8, 14) << QPoint(2, 10) << QPoint(2, 4);
-            p.drawPolygon(poly);
+        if (iconType == 0) { // Dashboard (Blocks)
+            p.drawRoundedRect(2, 2, 8, 8, 2, 2); p.drawRoundedRect(12, 2, 8, 8, 2, 2);
+            p.drawRoundedRect(2, 12, 8, 8, 2, 2); p.setBrush(QColor(80, 80, 80)); p.drawRoundedRect(12, 12, 8, 8, 2, 2);
+        } else if (iconType == 1) { // Analytics (Chart)
+            p.setPen(QPen(color, 2)); p.setBrush(Qt::NoBrush);
+            p.drawLine(4, 18, 8, 10); p.drawLine(8, 10, 14, 14); p.drawLine(14, 14, 20, 4);
+        } else if (iconType == 2) { // Log
+            p.drawRoundedRect(5, 2, 14, 20, 2, 2); p.setBrush(QColor(30, 30, 30));
+            p.drawRect(8, 8, 8, 2); p.drawRect(8, 12, 8, 2); p.drawRect(8, 16, 5, 2);
+        } else if (iconType == 3) { // Shield
+            QPainterPath path; path.moveTo(12, 2); path.lineTo(20, 5); path.lineTo(20, 12);
+            path.quadTo(20, 20, 12, 22); path.quadTo(4, 20, 4, 12); path.lineTo(4, 5); path.closeSubpath();
+            p.drawPath(path);
+        } else { // Sessions
+            p.drawRoundedRect(4, 4, 4, 4, 1, 1); p.drawRect(10, 5, 10, 2);
+            p.drawRoundedRect(4, 10, 4, 4, 1, 1); p.drawRect(10, 11, 10, 2);
+            p.drawRoundedRect(4, 16, 4, 4, 1, 1); p.drawRect(10, 17, 10, 2);
         }
-        else { // List (Sessions)
-            p.drawRect(2, 4, 3, 3); p.drawRect(7, 4, 7, 2);
-            p.drawRect(2, 8, 3, 3); p.drawRect(7, 8, 7, 2);
-            p.drawRect(2, 12, 3, 3); p.drawRect(7, 12, 7, 2);
-        }
-        
         item->setIcon(QIcon(pixmap));
         item->setText("  " + text);
         sidebarList_->addItem(item);
     };
 
-    addSidebarItem("Dashboard", QColor("#a6e3a1"), 0);
-    addSidebarItem("Deep Analytics", QColor("#89b4fa"), 1);
-    addSidebarItem("Event Log (Live)", QColor("#f9e2af"), 2);
-    addSidebarItem("Security Incidents", QColor("#89b4fa"), 3);
-    addSidebarItem("Sessions History", QColor("#cba6f7"), 4);
+    addSidebarItem("Dashboard", QColor(100, 220, 100), 0);
+    addSidebarItem("Deep Analytics", QColor(100, 150, 255), 1);
+    addSidebarItem("Event Log", QColor(255, 180, 80), 2);
+    addSidebarItem("Incidents", QColor(100, 150, 255), 3);
+    addSidebarItem("Sessions", QColor(200, 100, 255), 4);
     
     sidebarList_->setCurrentRow(0);
-
     contentLayout->addWidget(sidebarList_);
 
-    // Stacked widget
     stackedWidget_ = new QStackedWidget();
-    stackedWidget_->setStyleSheet("background: #181825;");
-
+    stackedWidget_->setStyleSheet("background: #181818;");
     dashboardWidget_ = new DashboardWidget();
     logWidget_ = new LogWidget();
     sessionWidget_ = new SessionWidget();
@@ -171,96 +203,66 @@ void MainWindow::setupUI() {
     stackedWidget_->addWidget(sessionWidget_);
 
     contentLayout->addWidget(stackedWidget_, 1);
-
-    connect(sidebarList_, &QListWidget::currentRowChanged,
-            stackedWidget_, &QStackedWidget::setCurrentIndex);
-
+    connect(sidebarList_, &QListWidget::currentRowChanged, stackedWidget_, &QStackedWidget::setCurrentIndex);
     setCentralWidget(centralWidget);
 
-    // Toolbar
     auto* toolbar = addToolBar("Main");
     toolbar->setMovable(false);
-    toolbar->setStyleSheet("QToolBar { background: #11111b; border-bottom: 1px solid #313244; padding: 6px; spacing: 8px; }");
+    toolbar->setStyleSheet("QToolBar { background: #222222; border-bottom: 1px solid #444444; padding: 8px; spacing: 12px; }");
 
-    // Open PCAP button
-    auto* openPcapBtn = new QPushButton("📁 Открыть PCAP");
-    openPcapBtn->setStyleSheet("padding: 4px 10px; color: #f9e2af; font-weight: bold; background: #313244; border-radius: 4px; border: none;");
+    auto* openPcapBtn = new QPushButton("📁 Open PCAP");
+    openPcapBtn->setStyleSheet("QPushButton { padding: 5px 12px; color: #ffcc66; font-weight: bold; background: #333333; border: 1px solid #444444; border-radius: 4px; } QPushButton:hover { background: #444444; }");
     connect(openPcapBtn, &QPushButton::clicked, [this]() {
         QString path = QFileDialog::getOpenFileName(this, "Open PCAP", "", "PCAP files (*.pcap *.pcapng)");
         if (!path.isEmpty()) {
-            nlohmann::json data;
-            data["path"] = path.toStdString();
+            nlohmann::json data; data["path"] = path.toStdString();
             dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_PCAP, data);
         }
     });
     toolbar->addWidget(openPcapBtn);
 
-    // Folder icon button
-    auto* folderBtn = new QPushButton("📁");
-    folderBtn->setStyleSheet("padding: 4px 10px; color: #f9e2af; background: #313244; border-radius: 4px; border: none;");
+    auto* folderBtn = new QPushButton("📂");
+    folderBtn->setStyleSheet("QPushButton { padding: 5px 8px; color: #ffcc66; background: #333333; border: 1px solid #444444; border-radius: 4px; } QPushButton:hover { background: #444444; }");
     toolbar->addWidget(folderBtn);
 
     toolbar->addSeparator();
-
-    // Model ComboBox
-    auto* modelLbl = new QLabel(" Модель: ");
-    modelLbl->setStyleSheet("color: #a6adc8;");
+    auto* modelLbl = new QLabel(" Model: "); modelLbl->setStyleSheet("color: #999999; font-weight: bold;");
     toolbar->addWidget(modelLbl);
     
     auto* modelCombo = new QComboBox();
     QDir modelsDir("models");
     QStringList modelFiles = modelsDir.entryList(QStringList() << "*.onnx", QDir::Files);
-    if (modelFiles.isEmpty()) modelFiles << "mlp_model.onnx" << "rf_model.onnx";
+    if (modelFiles.isEmpty()) modelFiles << "rf_model.onnx" << "mlp_model.onnx";
     modelCombo->addItems(modelFiles);
-    modelCombo->setStyleSheet("QComboBox { color: #cdd6f4; background: #313244; border: 1px solid #45475a; border-radius: 4px; padding: 2px 12px; }");
+    modelCombo->setStyleSheet("QComboBox { color: #eeeeee; background: #333333; border: 1px solid #444444; border-radius: 4px; padding: 2px 12px; min-width: 150px; }");
     connect(modelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, modelCombo](int idx) {
         QString modelName = modelCombo->itemText(idx);
-        nlohmann::json data;
-        data["path"] = std::string("models/") + modelName.toStdString();
+        nlohmann::json data; data["path"] = std::string("models/") + modelName.toStdString();
         dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_MODEL, data);
     });
     toolbar->addWidget(modelCombo);
 
     toolbar->addSeparator();
-
-    // Live Indicator
-    auto* liveIndicator = new QWidget();
-    auto* liveLayout = new QHBoxLayout(liveIndicator);
-    liveLayout->setContentsMargins(0, 0, 0, 0);
-    liveLayout->setSpacing(6);
-    
-    auto* dot = new QLabel("●");
-    dot->setStyleSheet("color: #a6e3a1; font-size: 16px;");
-    auto* txt = new QLabel("Live");
-    txt->setStyleSheet("color: #cdd6f4; font-weight: bold;");
-    
-    liveLayout->addWidget(dot);
-    liveLayout->addWidget(txt);
+    auto* liveIndicator = new QWidget(); auto* liveLayout = new QHBoxLayout(liveIndicator);
+    liveLayout->setContentsMargins(0, 0, 0, 0); liveLayout->setSpacing(8);
+    auto* dot = new QLabel("●"); dot->setStyleSheet("color: #66ff66; font-size: 16px;");
+    auto* txt = new QLabel("Live"); txt->setStyleSheet("color: #eeeeee; font-weight: bold; font-size: 13px;");
+    liveLayout->addWidget(dot); liveLayout->addWidget(txt);
     toolbar->addWidget(liveIndicator);
 
-    // Spacer
-    auto* spacer = new QWidget();
-    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    auto* spacer = new QWidget(); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolbar->addWidget(spacer);
 
-    // Theme selector
-    auto* themeLabel = new QLabel("Theme: ");
-    themeLabel->setStyleSheet("color: #a6adc8;");
-    toolbar->addWidget(themeLabel);
-    
     auto* themeCombo = new QComboBox();
-    themeCombo->addItems({"Dark", "Light", "System"});
-    themeCombo->setStyleSheet("QComboBox { color: #cdd6f4; background: #313244; border: 1px solid #45475a; border-radius: 4px; padding: 2px 12px; }");
+    themeCombo->addItems({"Dark Mode", "Light Mode"});
+    themeCombo->setStyleSheet("QComboBox { color: #eeeeee; background: #333333; border: 1px solid #444444; border-radius: 4px; padding: 2px 12px; }");
     connect(themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        ThemeMode mode = idx == 0 ? ThemeMode::Dark : idx == 1 ? ThemeMode::Light : ThemeMode::System;
+        ThemeMode mode = idx == 0 ? ThemeMode::Dark : ThemeMode::Light;
         dashboardWidget_->applyTheme(mode);
     });
     toolbar->addWidget(themeCombo);
 
-    // Remove status bar completely
     setStatusBar(nullptr);
-
-    // Apply default theme
     ThemePalette::apply(ThemeMode::Dark);
 }
 
@@ -277,6 +279,15 @@ void MainWindow::setupConnections() {
     connect(dataBridge_, &DataBridge::realtimeStatsReceived,
         [this](const DetectionResult& r, uint64_t) {
             logWidget_->addEvent(r);
+            
+            // Update tray icon based on status
+            if (r.label == 1) {
+                trayIcon_->setIcon(iconAttack_);
+                trayIcon_->setToolTip("DDoS Monitor - ATTACK DETECTED!");
+            } else {
+                trayIcon_->setIcon(iconNormal_);
+                trayIcon_->setToolTip("DDoS Monitor - Normal");
+            }
         });
     connect(dataBridge_, &DataBridge::realtimeSnapshotReceived,
             dashboardWidget_, &DashboardWidget::updateSnapshot);
@@ -308,13 +319,29 @@ void MainWindow::setupConnections() {
 
 void MainWindow::setupSystemTray() {
     trayIcon_ = new QSystemTrayIcon(this);
-    trayIcon_->setIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
+    trayIcon_->setIcon(iconNormal_);
     trayIcon_->setToolTip("DDoS Monitor");
+
+    trayMenu_ = new QMenu(this);
+    auto* expandAction = trayMenu_->addAction("Expand Dashboard");
+    connect(expandAction, &QAction::triggered, this, &MainWindow::showNormal);
+
+    trayMenu_->addSeparator();
+    pauseAction_ = trayMenu_->addAction("Pause Monitoring");
+    pauseAction_->setCheckable(true);
+    connect(pauseAction_, &QAction::toggled, [this](bool paused) {
+        AppLogger::get()->info("Monitoring {}", paused ? "paused" : "resumed");
+    });
+
+    auto* exitAction = trayMenu_->addAction("Exit");
+    connect(exitAction, &QAction::triggered, qApp, &QCoreApplication::quit);
+
+    trayIcon_->setContextMenu(trayMenu_);
     trayIcon_->show();
 
     connect(trayIcon_, &QSystemTrayIcon::activated, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {
-            if (isVisible()) hide(); else show();
+            if (isVisible()) hide(); else { show(); raise(); activateWindow(); }
         }
     });
 }

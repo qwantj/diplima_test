@@ -60,6 +60,7 @@ add_library(ddos_core STATIC
     src/common/TcpServer.cpp
     src/common/TcpClient.cpp
     src/common/DataBridge.cpp
+    src/common/ConfigManager.cpp
     src/network/TrafficMonitor.cpp
     src/network/FeatureExtractor.cpp
     src/network/PcapDumper.cpp

@@ -1,0 +1,198 @@
+void DashboardWidget::setupDashboard() {
+    tabSystem_ = new QWidget();
+    auto* layout = new QVBoxLayout(tabSystem_);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    // 1. Overview Bar
+    auto* overviewWidget = new QWidget();
+    overviewWidget->setStyleSheet("background: #11111b; border-bottom: 1px solid #313244;");
+    auto* overviewLayout = new QHBoxLayout(overviewWidget);
+    overviewLayout->setContentsMargins(15, 10, 15, 10);
+    overviewLayout->setSpacing(20);
+    
+    auto createStatusLabel = [](const QString& text, const QString& color = "#cccccc") {
+        auto* l = new QLabel(text);
+        l->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: 600;").arg(color));
+        return l;
+    };
+
+    lblCollector_ = createStatusLabel("Collector: Disconnected", "#f38ba8");
+    lblTotalPackets_ = createStatusLabel("Total Packets: 0");
+    lblPps_ = createStatusLabel("Current PPS: 0.0");
+    lblDropRate_ = createStatusLabel("Drop Rate: 0.0 pps", "#fab387");
+    lblSources_ = createStatusLabel("Sources: 0");
+    
+    bpfCheckbox_ = new QCheckBox("Auto-Block Top-IP (BPF)");
+    bpfCheckbox_->setStyleSheet("QCheckBox { color: #cdd6f4; font-size: 12px; }");
+    connect(bpfCheckbox_, &QCheckBox::toggled, this, &DashboardWidget::bpfToggled);
+    
+    lblModel_ = createStatusLabel("None", "#f5c2e7");
+    lblProbability_ = createStatusLabel("Probability: 0.0%", "#a6e3a1");
+    lblStatus_ = createStatusLabel("✔ Normal Traffic", "#a6e3a1");
+    lblStatus_->setStyleSheet(lblStatus_->styleSheet() + "font-weight: bold; font-size: 14px;");
+
+    overviewLayout->addWidget(lblCollector_);
+    overviewLayout->addWidget(lblTotalPackets_);
+    overviewLayout->addWidget(lblPps_);
+    overviewLayout->addWidget(lblDropRate_);
+    overviewLayout->addWidget(lblSources_);
+    overviewLayout->addWidget(bpfCheckbox_);
+    overviewLayout->addStretch();
+    overviewLayout->addWidget(lblModel_);
+    overviewLayout->addWidget(lblProbability_);
+    overviewLayout->addWidget(lblStatus_);
+
+    layout->addWidget(overviewWidget);
+
+    // 2. Legend Bar (Layer Toggles)
+    auto* legendWidget = new QWidget();
+    legendWidget->setStyleSheet("background: #181825;");
+    auto* legendLayout = new QHBoxLayout(legendWidget);
+    legendLayout->setContentsMargins(20, 5, 20, 5);
+    legendLayout->setSpacing(20);
+    legendLayout->addStretch();
+
+    auto createLayerCb = [&](const QString& text, const QString& color, QCheckBox*& cb) {
+        cb = new QCheckBox(text);
+        cb->setChecked(true);
+        cb->setStyleSheet(QString("QCheckBox { color: %1; font-weight: bold; font-size: 11px; } "
+                                  "QCheckBox::indicator { width: 12px; height: 12px; }").arg(color));
+        legendLayout->addWidget(cb);
+    };
+
+    createLayerCb("Packets per Second", "#74c7ec", cbPps_);
+    createLayerCb("Other", "#a6adc8", cbOther_);
+    createLayerCb("ICMP", "#f38ba8", cbIcmp_);
+    createLayerCb("UDP", "#f9e2af", cbUdp_);
+    createLayerCb("TCP", "#a6e3a1", cbTcp_);
+    createLayerCb("Attack Confidence %", "#fab387", cbConf_);
+    
+    legendLayout->addStretch();
+    layout->addWidget(legendWidget);
+
+    // 3. Main Area Chart
+    ppsChart_ = new QChart();
+    ppsChart_->setAnimationOptions(QChart::NoAnimation);
+    ppsChart_->setBackgroundBrush(Qt::transparent);
+    ppsChart_->legend()->hide();
+    ppsChart_->setMargins(QMargins(0,0,0,0));
+
+    ppsSeries_ = new QLineSeries(); ppsSeries_->setName("PPS");
+    tcpSeries_ = new QLineSeries(); tcpSeries_->setName("TCP");
+    udpSeries_ = new QLineSeries(); udpSeries_->setName("UDP");
+    icmpSeries_ = new QLineSeries(); icmpSeries_->setName("ICMP");
+    otherSeries_ = new QLineSeries(); otherSeries_->setName("Other");
+    
+    attackConfidenceUpper_ = new QLineSeries();
+    auto* attackConfidenceLower = new QLineSeries();
+    attackConfidenceArea_ = new QAreaSeries(attackConfidenceUpper_, attackConfidenceLower);
+    attackConfidenceArea_->setName("Confidence");
+
+    ppsChart_->addSeries(ppsSeries_);
+    ppsChart_->addSeries(otherSeries_);
+    ppsChart_->addSeries(icmpSeries_);
+    ppsChart_->addSeries(udpSeries_);
+    ppsChart_->addSeries(tcpSeries_);
+    ppsChart_->addSeries(attackConfidenceArea_);
+
+    timeAxis_ = new QDateTimeAxis();
+    timeAxis_->setFormat("HH:mm:ss");
+    timeAxis_->setGridLineColor(QColor("#313244"));
+    ppsChart_->addAxis(timeAxis_, Qt::AlignBottom);
+
+    ppsAxis_ = new QValueAxis();
+    ppsAxis_->setGridLineColor(QColor("#313244"));
+    ppsChart_->addAxis(ppsAxis_, Qt::AlignLeft);
+
+    confAxis_ = new QValueAxis();
+    confAxis_->setRange(0, 100);
+    confAxis_->setGridLineVisible(false);
+    ppsChart_->addAxis(confAxis_, Qt::AlignRight);
+
+    ppsSeries_->attachAxis(timeAxis_); ppsSeries_->attachAxis(ppsAxis_);
+    tcpSeries_->attachAxis(timeAxis_); tcpSeries_->attachAxis(ppsAxis_);
+    udpSeries_->attachAxis(timeAxis_); udpSeries_->attachAxis(ppsAxis_);
+    icmpSeries_->attachAxis(timeAxis_); icmpSeries_->attachAxis(ppsAxis_);
+    otherSeries_->attachAxis(timeAxis_); otherSeries_->attachAxis(ppsAxis_);
+    attackConfidenceArea_->attachAxis(timeAxis_); attackConfidenceArea_->attachAxis(confAxis_);
+
+    // Connect layer toggles
+    connect(cbPps_, &QCheckBox::toggled, ppsSeries_, &QLineSeries::setVisible);
+    connect(cbTcp_, &QCheckBox::toggled, tcpSeries_, &QLineSeries::setVisible);
+    connect(cbUdp_, &QCheckBox::toggled, udpSeries_, &QLineSeries::setVisible);
+    connect(cbIcmp_, &QCheckBox::toggled, icmpSeries_, &QLineSeries::setVisible);
+    connect(cbOther_, &QCheckBox::toggled, otherSeries_, &QLineSeries::setVisible);
+    connect(cbConf_, &QCheckBox::toggled, attackConfidenceArea_, &QAreaSeries::setVisible);
+
+    ppsChartView_ = new InteractiveChartView(ppsChart_, this);
+    ppsChartView_->setRenderHint(QPainter::Antialiasing);
+    ppsChartView_->setStyleSheet("background: #181825; border: none;");
+    connect(ppsChartView_, &InteractiveChartView::userInteracted, this, &DashboardWidget::onUserInteracted);
+
+    auto* chartWrapper = new QWidget();
+    auto* wrapperLayout = new QVBoxLayout(chartWrapper);
+    wrapperLayout->setContentsMargins(0, 0, 0, 0);
+    wrapperLayout->setSpacing(0);
+    
+    auto* resetLayout = new QHBoxLayout();
+    resetLayout->addStretch();
+    auto* resetZoomBtn = new QPushButton("Reset Zoom");
+    resetZoomBtn->setCursor(Qt::PointingHandCursor);
+    resetZoomBtn->setStyleSheet("background: #313244; color: #cdd6f4; border-radius: 4px; padding: 4px 12px; border: none; margin-right: 10px;");
+    connect(resetZoomBtn, &QPushButton::clicked, this, &DashboardWidget::resetZoom);
+    resetLayout->addWidget(resetZoomBtn);
+    wrapperLayout->addLayout(resetLayout);
+    wrapperLayout->addWidget(ppsChartView_, 1);
+
+    layout->addWidget(chartWrapper, 1);
+
+    // 4. Donuts Bottom
+    auto* donutsLayout = new QHBoxLayout();
+    donutsLayout->setSpacing(15);
+    donutsLayout->setContentsMargins(15, 10, 15, 15);
+    
+    auto createDonut = [&](QChart*& chart, QPieSeries*& pie, QLabel*& titleLbl, const QString& titleText) {
+        auto* container = new QWidget();
+        container->setStyleSheet("background: #1e1e2e; border-radius: 12px; border: 1px solid #313244;");
+        auto* l = new QVBoxLayout(container);
+        l->setContentsMargins(15, 15, 15, 15);
+        
+        titleLbl = new QLabel(titleText);
+        titleLbl->setAlignment(Qt::AlignCenter);
+        titleLbl->setStyleSheet("color: #cdd6f4; font-weight: bold; font-size: 14px;");
+        l->addWidget(titleLbl);
+        
+        chart = new QChart();
+        chart->setAnimationOptions(QChart::NoAnimation);
+        chart->setBackgroundBrush(Qt::transparent);
+        chart->legend()->setAlignment(Qt::AlignBottom);
+        chart->legend()->setLabelBrush(QBrush(QColor("#a6adc8")));
+        chart->setMargins(QMargins(0,0,0,0));
+        
+        pie = new QPieSeries();
+        pie->setHoleSize(0.65);
+        chart->addSeries(pie);
+        
+        auto* v = new QChartView(chart);
+        v->setRenderHint(QPainter::Antialiasing);
+        v->setFixedHeight(180);
+        v->setBackgroundBrush(Qt::transparent);
+        l->addWidget(v);
+        return container;
+    };
+
+    donutsLayout->addWidget(createDonut(cpuChart_, cpuPie_, cpuTitle_, "CPU (0.0%)"));
+    donutsLayout->addWidget(createDonut(ramChart_, ramPie_, ramTitle_, "RAM (0.0%)"));
+    donutsLayout->addWidget(createDonut(trafficChart_, trafficPie_, trafficTitle_, "Traffic Ratio (Attack: 0.0%)"));
+    
+    cpuPie_->append("In Use", 0)->setBrush(QColor("#f38ba8"));
+    cpuPie_->append("Free", 100)->setBrush(QColor("#a6e3a1"));
+    ramPie_->append("In Use", 0)->setBrush(QColor("#fab387"));
+    ramPie_->append("Free", 100)->setBrush(QColor("#a6e3a1"));
+    trafficPie_->append("Normal", 1)->setBrush(QColor("#a6e3a1"));
+    trafficPie_->append("Attack", 0)->setBrush(QColor("#f38ba8"));
+
+    layout->addLayout(donutsLayout);
+    applyTheme(ThemeMode::Dark);
+}
