@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "common/Protocol.hpp"
+#include "common/PacketBuffer.hpp"
 
 class FeatureExtractor {
 public:
@@ -21,7 +22,8 @@ public:
     bool loadScalerParams(const std::string& jsonPath);
 
     // Process a packet within the current window
-    void processPacket(pcpp::RawPacket& rawPacket);
+    void processPacket(PacketBuffer* pktBuf);
+    void processPacket(pcpp::RawPacket& rawPacket); // deprecated/fallback
 
     // Finalize the window and compute features
     std::vector<double> computeFeatures();

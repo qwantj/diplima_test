@@ -13,6 +13,8 @@
 #include <RawPacket.h>
 
 #include "concurrentqueue.h"
+#include "blockingconcurrentqueue.h"
+#include "common/PacketBuffer.hpp"
 
 class TrafficMonitor {
 public:
@@ -34,7 +36,9 @@ public:
     void setBpfFilter(const std::string& filter);
 
     // Drain captured packets
-    bool dequeuePacket(pcpp::RawPacket& packet);
+    bool dequeuePacket(PacketBuffer*& packet);
+    bool dequeuePacketTimed(PacketBuffer*& packet, std::chrono::microseconds timeout);
+    void recycleBuffer(PacketBuffer* packet);
     size_t queueSize() const;
 
     // Stats
@@ -45,9 +49,11 @@ public:
 
 private:
     static void onPacketArrived(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie);
+    PacketBuffer* getBuffer();
 
     pcpp::PcapLiveDevice* device_ = nullptr;
-    moodycamel::ConcurrentQueue<pcpp::RawPacket> packetQueue_;
+    moodycamel::BlockingConcurrentQueue<PacketBuffer*> packetQueue_;
+    moodycamel::ConcurrentQueue<PacketBuffer*> bufferPool_;
     std::atomic<bool> capturing_{false};
     std::atomic<uint64_t> totalCaptured_{0};
     std::atomic<uint64_t> droppedPackets_{0};

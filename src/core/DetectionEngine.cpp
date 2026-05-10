@@ -101,19 +101,33 @@ void DetectionEngine::inferenceLoop() {
 
         // Collect packets for the window duration
         while (running_) {
-            auto elapsed = std::chrono::steady_clock::now() - windowStart;
-            if (std::chrono::duration<double>(elapsed).count() >= INFERENCE_WINDOW_SEC)
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration<double>(now - windowStart).count();
+            if (elapsed >= INFERENCE_WINDOW_SEC)
                 break;
 
-            pcpp::RawPacket pkt;
-            if (monitor_.dequeuePacket(pkt)) {
-                extractor_.processPacket(pkt);
+            double remaining = INFERENCE_WINDOW_SEC - elapsed;
+            auto timeout = std::chrono::microseconds(static_cast<long long>(remaining * 1e6));
+            if (timeout.count() < 1000) timeout = std::chrono::microseconds(1000);
 
-                if (dumpEnabled_)
-                    dumper_.writePacket(pkt, 0); // label updated after inference
-            } else {
-                // No packets available, short sleep
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            PacketBuffer* pktBuf = nullptr;
+            if (monitor_.dequeuePacketTimed(pktBuf, timeout) && pktBuf != nullptr) {
+                // To keep PcapDumper logic compatible for now, wrap it in a dummy RawPacket
+                // if dumpEnabled_ is true. Feature extractor logic will be updated soon.
+
+                extractor_.processPacket(pktBuf);
+
+                if (dumpEnabled_) {
+                    timespec ts;
+                    auto duration = pktBuf->timestamp.time_since_epoch();
+                    ts.tv_sec = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+                    ts.tv_nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(duration % std::chrono::seconds(1)).count();
+
+                    pcpp::RawPacket rawPkt(pktBuf->data(), pktBuf->size(), ts, false);
+                    dumper_.writePacket(rawPkt, 0); // label updated after inference
+                }
+
+                monitor_.recycleBuffer(pktBuf);
             }
         }
 
