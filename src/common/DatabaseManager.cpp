@@ -268,84 +268,98 @@ void DatabaseManager::stopAsyncWriter() {
 }
 
 void DatabaseManager::flushEvents(QSqlDatabase& db) {
-    std::unique_ptr<QMutexLocker<QMutex>> lock;
+    // Используем std::optional для избежания лишней аллокации в куче (heap)
+    std::optional<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
-        lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
+        lock.emplace(&dbMutex_);
     }
 
-    int count = 0;
-    
-    QSqlQuery qEvents(db);
-    qEvents.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
+    if (!db.isOpen()) return;
 
-    // 1. Process pending events from disk buffer first (if any)
-    if (pendingEventsBuffer_.size() > 0 && db.isOpen()) {
+    int count = 0;
+    int throttled = 0;
+    bool transactionActive = false;
+
+    // Создаем ОДИН объект запроса и подготавливаем его ОДИН раз для всего метода
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+
+    // 1. Сначала обрабатываем события из дискового буфера (если они есть)
+    if (pendingEventsBuffer_.size() > 0) {
         auto bufferedMessages = pendingEventsBuffer_.readAllAndClear();
         if (!bufferedMessages.empty()) {
             db.transaction();
+            transactionActive = true;
+            
             for (const auto& msg : bufferedMessages) {
                 try {
                     auto j = nlohmann::json::parse(msg.toStdString());
                     DetectionResult r = Protocol::deserializeResult(j);
-                    
-                    qEvents.bindValue(0, r.sessionId);
-                    qEvents.bindValue(1, r.timestamp);
-                    qEvents.bindValue(2, r.label);
-                    qEvents.bindValue(3, r.confidence);
-                    qEvents.bindValue(4, r.pps);
-                    qEvents.bindValue(5, (qint64)r.totalPackets);
-                    nlohmann::json featJson = r.features;
-                    qEvents.bindValue(6, QString::fromStdString(featJson.dump()));
-                    qEvents.bindValue(7, QString::fromStdString(r.modelName));
-                    qEvents.exec();
-                    ++count;
-                } catch (...) {}
+
+                    q.bindValue(0, r.sessionId);
+                    q.bindValue(1, r.timestamp);
+                    q.bindValue(2, r.label);
+                    q.bindValue(3, r.confidence);
+                    q.bindValue(4, r.pps);
+                    q.bindValue(5, static_cast<qint64>(r.totalPackets));
+                    q.bindValue(6, QString::fromStdString(r.featuresJson().dump()));
+                    q.bindValue(7, QString::fromStdString(r.modelName));
+
+                    if (q.exec()) {
+                        ++count;
+                    }
+                } catch (...) {
+                    // Логирование ошибки парсинга/выполнения (рекомендуется добавить)
+                }
             }
+            
             db.commit();
             AppLogger::get()->info("DatabaseManager: restored and flushed {} buffered offline events.", count);
-            count = 0; // reset counter for the live queue
+            count = 0;
+            transactionActive = false;
         }
     }
 
-    // 2. Process live queue
+    // 2. Обрабатываем живую очередь
     EventEntry entry;
-    int throttled = 0;
-    bool transactionActive = false;
-    
     while (eventQueue_.try_dequeue(entry)) {
+        // Если база внезапно закрылась — всё оставшееся отправляем в буфер
         if (!db.isOpen()) {
-            // DB disconnected: save to disk buffer
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
             continue;
         }
 
+        // Защита от перегрузки (Throttling)
         if (count >= MAX_EVENTS_PER_FLUSH) {
-            // Throttling: save excess to disk buffer
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
             throttled++;
             continue;
         }
-        
+
         if (!transactionActive) {
             db.transaction();
             transactionActive = true;
         }
 
-        qEvents.bindValue(0, entry.result.sessionId);
-        qEvents.bindValue(1, entry.result.timestamp);
-        qEvents.bindValue(2, entry.result.label);
-        qEvents.bindValue(3, entry.result.confidence);
-        qEvents.bindValue(4, entry.result.pps);
-        qEvents.bindValue(5, (qint64)entry.result.totalPackets);
+        q.bindValue(0, entry.result.sessionId);
+        q.bindValue(1, entry.result.timestamp);
+        q.bindValue(2, entry.result.label);
+        q.bindValue(3, entry.result.confidence);
+        q.bindValue(4, entry.result.pps);
+        q.bindValue(5, static_cast<qint64>(entry.result.totalPackets));
+
         nlohmann::json featJson = entry.result.features;
-        qEvents.bindValue(6, QString::fromStdString(featJson.dump()));
-        qEvents.bindValue(7, QString::fromStdString(entry.result.modelName));
-        qEvents.exec();
-        ++count;
+        q.bindValue(6, QString::fromStdString(featJson.dump()));
+        q.bindValue(7, QString::fromStdString(entry.result.modelName));
+
+        if (q.exec()) {
+            ++count;
+        }
     }
-    
+
     if (transactionActive) {
         db.commit();
     }
@@ -354,6 +368,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
         AppLogger::get()->warn("DatabaseManager: throttled {} events to disk buffer to protect DB.", throttled);
     }
 }
+
 
 void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     std::unique_ptr<QMutexLocker<QMutex>> lock;
@@ -364,10 +379,8 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     SnapshotEntry entry;
     int count = 0;
     db.transaction();
-
     QSqlQuery q(db);
     q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
-
     while (snapshotQueue_.try_dequeue(entry)) {
         q.bindValue(0, entry.sessionId);
         q.bindValue(1, entry.timestamp);
@@ -391,10 +404,8 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     SecurityEventEntry entry;
     int count = 0;
     db.transaction();
-
     QSqlQuery q(db);
     q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
-
     while (securityEventQueue_.try_dequeue(entry)) {
         q.bindValue(0, entry.sessionId);
         q.bindValue(1, entry.startTime);
