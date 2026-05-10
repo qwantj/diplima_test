@@ -33,6 +33,7 @@ std::vector<std::pair<std::string, std::string>> TrafficMonitor::listInterfaces(
 
 static std::string cleanString(const std::string& s) {
     std::string out;
+    out.reserve(s.size());
     for (char c : s) {
         if (std::isalnum((unsigned char)c)) out += (char)std::tolower((unsigned char)c);
     }

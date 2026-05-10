@@ -6,14 +6,15 @@
 struct AppConfig {
     // Collector & Monitor shared
     std::string collectorHost = "localhost";
+    std::string tcpBindHost = "127.0.0.1";
     int tcpPort = 50050;
 
     // Database
     std::string dbHost = "localhost";
     int dbPort = 5432;
     std::string dbName = "ddos_detection_db";
-    std::string dbUser = "postgres";
-    std::string dbPass = "qwerty";
+    std::string dbUser = "";
+    std::string dbPass = "";
 
     // ML
     std::string defaultModel = "models/rf_model.onnx";

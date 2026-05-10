@@ -23,10 +23,13 @@ public:
     // Process a packet within the current window
     void processPacket(pcpp::RawPacket& rawPacket);
 
-    // Finalize the window and compute features
-    std::vector<double> computeFeatures();
+    // Finalize the window and compute features for all active flows
+    std::vector<std::vector<double>> computeFeaturesBatch();
 
-    // Get normalized features (after scaler)
+    // Get normalized features for all active flows (after scaler)
+    std::vector<std::vector<double>> computeNormalizedFeaturesBatch();
+
+    // Get normalized features for the heaviest flow (backward compatibility)
     std::vector<double> computeNormalizedFeatures();
 
     // Get telemetry for the current window
@@ -38,7 +41,8 @@ public:
     // Set the scaler type for a specific model
     void setModelScaler(const std::string& modelName);
 
-    int featureCount() const { return 8; }
+    int featureCount() const { return scaler_.features.empty() ? 8 : (int)scaler_.features.size(); }
+    size_t activeFlowsCount() const { return activeFlows_.size(); }
 
 private:
     struct ScalerParams {
@@ -56,9 +60,7 @@ private:
     std::chrono::steady_clock::time_point windowStart_;
     bool windowStarted_ = false;
 
-    // Per-flow tracking for fwd/bwd classification
-    // Key: canonical 5-tuple (sorted IPs)
-    // Value: initiator direction (src_ip of first packet in flow)
+    // Per-flow tracking
     struct FlowKey {
         std::string ip1, ip2;
         uint16_t port1, port2;
@@ -68,13 +70,36 @@ private:
                    std::tie(o.ip1, o.ip2, o.port1, o.port2, o.proto);
         }
     };
-    std::map<FlowKey, std::string> flowInitiators_; // flowKey -> initiator srcIp
 
-    // Counters
-    uint64_t fwdPackets_    = 0;
-    uint64_t bwdPackets_    = 0;
-    uint64_t fwdBytes_      = 0;
-    uint64_t bwdBytes_      = 0;
+    struct FlowStats {
+        std::string initiatorIp;
+        std::chrono::steady_clock::time_point firstPacketTime;
+        std::chrono::steady_clock::time_point lastPacketTime;
+        uint64_t fwdPackets = 0;
+        uint64_t bwdPackets = 0;
+        uint64_t fwdBytes = 0;
+        uint64_t bwdBytes = 0;
+        
+        // Extended TCP features
+        uint64_t synPackets = 0;
+        uint64_t ackPackets = 0;
+        uint64_t finPackets = 0;
+        uint64_t rstPackets = 0;
+        uint64_t pshPackets = 0;
+        uint64_t urgPackets = 0;
+        uint64_t tcpWindowSizeTotal = 0;
+        
+        // Payload entropy tracking
+        std::vector<uint64_t> byteCounts;
+        uint64_t totalPayloadBytes = 0;
+
+        FlowStats() : byteCounts(256, 0) {}
+    };
+
+    std::map<FlowKey, FlowStats> activeFlows_;
+
+    // Global Window Counters (for telemetry)
+    uint64_t totalPackets_  = 0;
     uint64_t tcpPackets_    = 0;
     uint64_t udpPackets_    = 0;
     uint64_t icmpPackets_   = 0;
