@@ -165,7 +165,9 @@ SmartTooltip::SmartTooltip(QWidget* parent) : QFrame(parent) {
 }
 
 void SmartTooltip::updateContent(const QString& title, const QList<std::pair<QColor, QString>>& items, const QString& footer) {
-    QString html = QString("<b style='font-size: 12px;'>%1</b><br/>").arg(title);
+    QString html;
+    html.reserve(256 + items.size() * 128);
+    html += QString("<b style='font-size: 12px;'>%1</b><br/>").arg(title);
     html += "<table width='100%' style='margin-top: 5px;'>";
     for (const auto& item : items) {
         html += QString("<tr><td width='15'><span style='color: %1;'>■</span></td>"

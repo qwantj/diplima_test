@@ -13,13 +13,13 @@ TcpServer::~TcpServer() {
     clients_.clear();
 }
 
-bool TcpServer::startListening(quint16 port) {
-    if (!listen(QHostAddress::Any, port)) {
-        AppLogger::get()->error("TcpServer: failed to listen on port {}: {}",
-            port, errorString().toStdString());
+bool TcpServer::startListening(const QString& address, quint16 port) {
+    if (!listen(QHostAddress(address), port)) {
+        AppLogger::get()->error("TcpServer: failed to listen on {} port {}: {}",
+            address.toStdString(), port, errorString().toStdString());
         return false;
     }
-    AppLogger::get()->info("TcpServer: listening on port {}.", port);
+    AppLogger::get()->info("TcpServer: listening on {} port {}.", address.toStdString(), port);
     return true;
 }
 

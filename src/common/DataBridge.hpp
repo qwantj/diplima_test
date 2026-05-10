@@ -15,8 +15,8 @@ public:
     void connectToCollector(const QString& host = "localhost", quint16 port = 50050);
     void connectToDatabase(const QString& host = "localhost", int port = 5432,
                            const QString& dbName = "ddos_detection_db",
-                           const QString& user = "postgres",
-                           const QString& password = "qwerty");
+                           const QString& user = "",
+                           const QString& password = "");
 
     TcpClient* tcpClient() const { return tcpClient_; }
     DatabaseManager* databaseManager() const { return dbManager_; }

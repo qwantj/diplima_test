@@ -268,85 +268,98 @@ void DatabaseManager::stopAsyncWriter() {
 }
 
 void DatabaseManager::flushEvents(QSqlDatabase& db) {
-    std::unique_ptr<QMutexLocker<QMutex>> lock;
+    // Используем std::optional для избежания лишней аллокации в куче (heap)
+    std::optional<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
-        lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
+        lock.emplace(&dbMutex_);
     }
 
+    if (!db.isOpen()) return;
+
     int count = 0;
-    
-    // 1. Process pending events from disk buffer first (if any)
-    if (pendingEventsBuffer_.size() > 0 && db.isOpen()) {
+    int throttled = 0;
+    bool transactionActive = false;
+
+    // Создаем ОДИН объект запроса и подготавливаем его ОДИН раз для всего метода
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+
+    // 1. Сначала обрабатываем события из дискового буфера (если они есть)
+    if (pendingEventsBuffer_.size() > 0) {
         auto bufferedMessages = pendingEventsBuffer_.readAllAndClear();
         if (!bufferedMessages.empty()) {
             db.transaction();
+            transactionActive = true;
+            
             for (const auto& msg : bufferedMessages) {
                 try {
                     auto j = nlohmann::json::parse(msg.toStdString());
                     DetectionResult r = Protocol::deserializeResult(j);
-                    
-                    QSqlQuery q(db);
-                    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
-                    q.addBindValue(r.sessionId);
-                    q.addBindValue(r.timestamp);
-                    q.addBindValue(r.label);
-                    q.addBindValue(r.confidence);
-                    q.addBindValue(r.pps);
-                    q.addBindValue((qint64)r.totalPackets);
-                    nlohmann::json featJson = r.features;
-                    q.addBindValue(QString::fromStdString(featJson.dump()));
-                    q.addBindValue(QString::fromStdString(r.modelName));
-                    q.exec();
-                    ++count;
-                } catch (...) {}
+
+                    q.bindValue(0, r.sessionId);
+                    q.bindValue(1, r.timestamp);
+                    q.bindValue(2, r.label);
+                    q.bindValue(3, r.confidence);
+                    q.bindValue(4, r.pps);
+                    q.bindValue(5, static_cast<qint64>(r.totalPackets));
+                    q.bindValue(6, QString::fromStdString(r.featuresJson().dump()));
+                    q.bindValue(7, QString::fromStdString(r.modelName));
+
+                    if (q.exec()) {
+                        ++count;
+                    }
+                } catch (...) {
+                    // Логирование ошибки парсинга/выполнения (рекомендуется добавить)
+                }
             }
+            
             db.commit();
             AppLogger::get()->info("DatabaseManager: restored and flushed {} buffered offline events.", count);
-            count = 0; // reset counter for the live queue
+            count = 0;
+            transactionActive = false;
         }
     }
 
-    // 2. Process live queue
+    // 2. Обрабатываем живую очередь
     EventEntry entry;
-    int throttled = 0;
-    bool transactionActive = false;
-    
     while (eventQueue_.try_dequeue(entry)) {
+        // Если база внезапно закрылась — всё оставшееся отправляем в буфер
         if (!db.isOpen()) {
-            // DB disconnected: save to disk buffer
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
             continue;
         }
 
+        // Защита от перегрузки (Throttling)
         if (count >= MAX_EVENTS_PER_FLUSH) {
-            // Throttling: save excess to disk buffer
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
             throttled++;
             continue;
         }
-        
+
         if (!transactionActive) {
             db.transaction();
             transactionActive = true;
         }
 
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
-        q.addBindValue(entry.result.sessionId);
-        q.addBindValue(entry.result.timestamp);
-        q.addBindValue(entry.result.label);
-        q.addBindValue(entry.result.confidence);
-        q.addBindValue(entry.result.pps);
-        q.addBindValue((qint64)entry.result.totalPackets);
+        q.bindValue(0, entry.result.sessionId);
+        q.bindValue(1, entry.result.timestamp);
+        q.bindValue(2, entry.result.label);
+        q.bindValue(3, entry.result.confidence);
+        q.bindValue(4, entry.result.pps);
+        q.bindValue(5, static_cast<qint64>(entry.result.totalPackets));
+
         nlohmann::json featJson = entry.result.features;
-        q.addBindValue(QString::fromStdString(featJson.dump()));
-        q.addBindValue(QString::fromStdString(entry.result.modelName));
-        q.exec();
-        ++count;
+        q.bindValue(6, QString::fromStdString(featJson.dump()));
+        q.bindValue(7, QString::fromStdString(entry.result.modelName));
+
+        if (q.exec()) {
+            ++count;
+        }
     }
-    
+
     if (transactionActive) {
         db.commit();
     }
@@ -355,6 +368,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
         AppLogger::get()->warn("DatabaseManager: throttled {} events to disk buffer to protect DB.", throttled);
     }
 }
+
 
 void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     std::unique_ptr<QMutexLocker<QMutex>> lock;
@@ -365,14 +379,14 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     SnapshotEntry entry;
     int count = 0;
     db.transaction();
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
     while (snapshotQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
-        q.addBindValue(entry.sessionId);
-        q.addBindValue(entry.timestamp);
-        q.addBindValue(entry.pps);
-        q.addBindValue((qint64)entry.totalPackets);
-        q.addBindValue(entry.currentLabel);
+        q.bindValue(0, entry.sessionId);
+        q.bindValue(1, entry.timestamp);
+        q.bindValue(2, entry.pps);
+        q.bindValue(3, (qint64)entry.totalPackets);
+        q.bindValue(4, entry.currentLabel);
         q.exec();
         ++count;
     }
@@ -390,16 +404,16 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     SecurityEventEntry entry;
     int count = 0;
     db.transaction();
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
     while (securityEventQueue_.try_dequeue(entry)) {
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
-        q.addBindValue(entry.sessionId);
-        q.addBindValue(entry.startTime);
-        q.addBindValue(entry.duration);
-        q.addBindValue(entry.attackerIp);
-        q.addBindValue(entry.ppsMax);
-        q.addBindValue(entry.typeLabel);
-        q.addBindValue(entry.confidence);
+        q.bindValue(0, entry.sessionId);
+        q.bindValue(1, entry.startTime);
+        q.bindValue(2, entry.duration);
+        q.bindValue(3, entry.attackerIp);
+        q.bindValue(4, entry.ppsMax);
+        q.bindValue(5, entry.typeLabel);
+        q.bindValue(6, entry.confidence);
         q.exec();
         ++count;
     }
