@@ -216,6 +216,8 @@ taskkill /PID <PID> /F
 
 - параметры --db-host/--db-port/--db-name/--db-user/--db-password;
 
+- если используются переменные окружения (`DDOS_DB_USER`, `DDOS_DB_PASS`), убедитесь, что они заданы корректно;
+
 - база ddos_detection_db существует.
 
   

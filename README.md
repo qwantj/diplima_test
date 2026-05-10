@@ -38,3 +38,18 @@ For a detailed walkthrough with screenshots and `Qt6_DIR` verification, see
 
 CMake enables `ENABLE_PORTABLE_RUNTIME` to add `-static-libgcc -static-libstdc++` for MinGW builds.
 If you turn it off, ensure `C:/msys64/mingw64/bin` is on PATH when launching `dos_detector.exe`.
+
+## Настройка доступа к БД через переменные окружения
+
+Вы можете передать учетные данные для подключения к базе данных через переменные окружения, что является более безопасным подходом, чем хранение их в файле `config.json`.
+Приоритет конфигурации следующий:
+1. Переменные окружения (`DDOS_DB_USER` и `DDOS_DB_PASS`).
+2. Настройки в файле `config.json`.
+3. Пустая строка (если параметры не заданы).
+
+Пример использования в командной строке:
+```bash
+export DDOS_DB_USER=postgres
+export DDOS_DB_PASS=my_secure_password
+./ddos_collector
+```

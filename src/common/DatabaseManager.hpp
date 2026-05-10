@@ -25,8 +25,8 @@ public:
     bool connectToDatabase(const QString& host = "localhost",
                            int port = 5432,
                            const QString& dbName = "ddos_detection_db",
-                           const QString& user = "postgres",
-                           const QString& password = "qwerty");
+                           const QString& user = "",
+                           const QString& password = "");
     void disconnect();
     bool isConnected() const;
 
