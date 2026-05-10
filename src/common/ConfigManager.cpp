@@ -2,6 +2,7 @@
 #include "common/AppLogger.hpp"
 #include <fstream>
 #include <iomanip>
+#include <cstdlib>
 
 bool ConfigManager::load(const std::string& path, AppConfig& config) {
     std::ifstream f(path);
@@ -15,6 +16,7 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
         f >> j;
 
         config.collectorHost = j.value("collector_host", config.collectorHost);
+        config.tcpBindHost = j.value("tcp_bind_host", config.tcpBindHost);
         config.tcpPort = j.value("tcp_port", config.tcpPort);
 
         if (j.contains("database")) {
@@ -24,6 +26,16 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
             config.dbName = db.value("name", config.dbName);
             config.dbUser = db.value("user", config.dbUser);
             config.dbPass = db.value("password", config.dbPass);
+        }
+
+        const char* envUser = std::getenv("DDOS_DB_USER");
+        if (envUser && envUser[0] != '\0') {
+            config.dbUser = envUser;
+        }
+
+        const char* envPass = std::getenv("DDOS_DB_PASS");
+        if (envPass && envPass[0] != '\0') {
+            config.dbPass = envPass;
         }
 
         if (j.contains("ml")) {
@@ -50,6 +62,7 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
 bool ConfigManager::save(const std::string& path, const AppConfig& config) {
     nlohmann::json j;
     j["collector_host"] = config.collectorHost;
+    j["tcp_bind_host"] = config.tcpBindHost;
     j["tcp_port"] = config.tcpPort;
 
     j["database"] = {
