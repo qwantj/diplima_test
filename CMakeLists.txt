@@ -160,6 +160,12 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
 
 # =========================================================
 #  Copy models to output directories
+# =========================================================
+#  Tests
+# =========================================================
+enable_testing()
+add_subdirectory(tests)
+
 # --- Copy models and config to build directory ---
 add_custom_command(TARGET ddos_collector POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Copying models and config to collector build directory"
