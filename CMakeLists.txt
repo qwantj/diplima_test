@@ -117,6 +117,8 @@ endif()
 add_custom_command(TARGET ddos_collector POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Running windeployqt for ddos_collector"
     COMMAND Qt6::windeployqt "$<TARGET_FILE:ddos_collector>"
+    COMMAND ${CMAKE_COMMAND} -E echo "Removing Pcap SDK stubs (packet.dll, wpcap.dll) to use system Npcap"
+    COMMAND ${CMAKE_COMMAND} -E remove -f "$<TARGET_FILE_DIR:ddos_collector>/packet.dll" "$<TARGET_FILE_DIR:ddos_collector>/wpcap.dll"
 )
 
 # =========================================================
@@ -149,6 +151,8 @@ endif()
 add_custom_command(TARGET ddos_monitor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Running windeployqt for ddos_monitor"
     COMMAND Qt6::windeployqt "$<TARGET_FILE:ddos_monitor>"
+    COMMAND ${CMAKE_COMMAND} -E echo "Removing Pcap SDK stubs (packet.dll, wpcap.dll) to use system Npcap"
+    COMMAND ${CMAKE_COMMAND} -E remove -f "$<TARGET_FILE_DIR:ddos_monitor>/packet.dll" "$<TARGET_FILE_DIR:ddos_monitor>/wpcap.dll"
 )
 
 # =========================================================

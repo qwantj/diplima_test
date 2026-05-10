@@ -23,10 +23,30 @@ static void signalHandler(int) {
 
 // Поиск IP-адреса по человекочитаемому имени (например, "Wi-Fi" или "Ethernet")
 static std::string resolveNetworkInterface(const std::string& userInput) {
-    QString input = QString::fromStdString(userInput);
+    QString input = QString::fromStdString(userInput).trimmed().remove(' ').remove('-').remove('_');
+    
+    // Специальный маппинг для Wi-Fi в русской локализации
+    bool isWiFiQuery = (input.compare("WiFi", Qt::CaseInsensitive) == 0);
+
     for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
-        if (netIface.humanReadableName().compare(input, Qt::CaseInsensitive) == 0 ||
-            netIface.name().compare(input, Qt::CaseInsensitive) == 0) {
+        QString friendlyName = netIface.humanReadableName();
+        QString systemName = netIface.name();
+        
+        QString cleanFriendly = friendlyName.simplified().remove(' ').remove('-').remove('_');
+        QString cleanSystem = systemName.simplified().remove(' ').remove('-').remove('_');
+
+        bool match = (cleanFriendly.compare(input, Qt::CaseInsensitive) == 0) ||
+                     (cleanSystem.compare(input, Qt::CaseInsensitive) == 0);
+        
+        // Если ищем wifi, а нашли "Беспроводная сеть" (или ее вариант в кракозябрах)
+        if (!match && isWiFiQuery) {
+            if (friendlyName.contains("Беспроводная", Qt::CaseInsensitive) || 
+                friendlyName.contains("СЃРµС‚СЊ", Qt::CaseInsensitive)) {
+                match = true;
+            }
+        }
+
+        if (match) {
             for (const QNetworkAddressEntry& entry : netIface.addressEntries()) {
                 if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
                     std::string ipStr = entry.ip().toString().toStdString();
@@ -36,10 +56,14 @@ static std::string resolveNetworkInterface(const std::string& userInput) {
             }
         }
     }
-    return userInput; // Если не найдено, возвращаем как есть (может быть это уже IP)
+    return userInput;
 }
 
 int main(int argc, char* argv[]) {
+#ifdef Q_OS_WIN
+    system("chcp 65001 > nul");
+#endif
+
     QCoreApplication app(argc, argv);
     app.setApplicationName("ddos_collector");
     app.setApplicationVersion("2.2");
@@ -75,7 +99,7 @@ int main(int argc, char* argv[]) {
 
     // List interfaces
     if (parser.isSet("list-interfaces")) {
-        AppLogger::get()->info("Available user-friendly network interfaces:");
+        AppLogger::get()->info("Available network interfaces:");
         for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
             if (netIface.flags().testFlag(QNetworkInterface::IsUp)) {
                 QString ipList;
@@ -86,8 +110,10 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 if (!ipList.isEmpty()) {
+                    // Используем toUtf8().constData() для корректного вывода через AppLogger (spdlog)
                     AppLogger::get()->info("  \"{}\" (IP: {})", 
-                        netIface.humanReadableName().toStdString(), ipList.toStdString());
+                        netIface.humanReadableName().toUtf8().constData(), 
+                        ipList.toUtf8().constData());
                 }
             }
         }

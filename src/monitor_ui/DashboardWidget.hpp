@@ -4,7 +4,6 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QGridLayout>
 #include <QCheckBox>
 #include <QPushButton>
 #include <QTimer>
@@ -13,58 +12,22 @@
 #include <QtCharts/QChartView>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QAreaSeries>
-#include <QtCharts/QScatterSeries>
 #include <QtCharts/QDateTimeAxis>
 #include <QtCharts/QValueAxis>
 #include <QtCharts/QPieSeries>
 #include <QtCharts/QBarSeries>
-#include <QtCharts/QStackedBarSeries>
 #include <QtCharts/QBarSet>
 #include <QtCharts/QBarCategoryAxis>
 #include <QPainter>
 #include <vector>
 #include <deque>
+#include <map>
 
 #include "common/Protocol.hpp"
 #include "common/SystemMetricsCollector.hpp"
 #include "monitor_ui/ThemePalette.hpp"
 
-class HeatmapWidget : public QWidget {
-    Q_OBJECT
-public:
-    explicit HeatmapWidget(QWidget* parent = nullptr);
-    void addData(const QDateTime& time, const std::map<uint16_t, uint64_t>& portData);
-protected:
-    void paintEvent(QPaintEvent*) override;
-private:
-    struct Point { QDateTime t; uint16_t port; double intensity; };
-    std::deque<Point> points_;
-    QDateTime minTime_, maxTime_;
-};
-
-class NetworkTopologyWidget : public QWidget {
-    Q_OBJECT
-public:
-    explicit NetworkTopologyWidget(QWidget* parent = nullptr);
-    void updateTopology(const std::vector<std::pair<std::string, uint64_t>>& targets, double ingressMbps);
-protected:
-    void paintEvent(QPaintEvent*) override;
-private:
-    std::vector<std::pair<std::string, uint64_t>> targets_;
-    double ingressMbps_ = 0;
-};
-
-class AlertGridWidget : public QWidget {
-    Q_OBJECT
-public:
-    explicit AlertGridWidget(QWidget* parent = nullptr);
-    void addHealthPoint(bool ok);
-protected:
-    void paintEvent(QPaintEvent*) override;
-private:
-    std::deque<bool> healthHistory_; // 32 items for 4x8
-};
-
+// ---- Interactive chart view with zoom/pan ----
 class InteractiveChartView : public QChartView {
     Q_OBJECT
 public:
@@ -81,6 +44,47 @@ private:
     QPointF lastMousePos_;
 };
 
+// ---- SLO Health Grid (4x8 alert rectangles) ----
+class AlertGridWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit AlertGridWidget(QWidget* parent = nullptr);
+    void addHealthPoint(bool ok);
+protected:
+    void paintEvent(QPaintEvent*) override;
+private:
+    std::deque<bool> healthHistory_;
+};
+
+// ---- Network Topology graph ----
+class NetworkTopologyWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit NetworkTopologyWidget(QWidget* parent = nullptr);
+    void updateTopology(const std::vector<std::pair<std::string, uint64_t>>& targets, double ingressMbps);
+protected:
+    void paintEvent(QPaintEvent*) override;
+private:
+    std::vector<std::pair<std::string, uint64_t>> targets_;
+    double ingressMbps_ = 0.0;
+};
+
+// ---- Port Activity Heatmap ----
+class HeatmapWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit HeatmapWidget(QWidget* parent = nullptr);
+    void addData(const QDateTime& time, const std::map<uint16_t, uint64_t>& portData);
+protected:
+    void paintEvent(QPaintEvent*) override;
+private:
+    struct HeatPoint { QDateTime t; uint16_t port; double intensity; };
+    std::deque<HeatPoint> points_;
+    QDateTime minTime_;
+    QDateTime maxTime_;
+};
+
+// ---- Main Dashboard ----
 class DashboardWidget : public QWidget {
     Q_OBJECT
 public:
@@ -107,12 +111,10 @@ private:
     void setupUI();
     void setupDashboard();
     void setupAnalytics();
-    
     void addDataPoint(const DetectionResult& result);
     void updateDonuts(double cpu, double ram);
 
-    // -- Dashboard Overview --
-    QWidget* tabSystem_ = nullptr;
+    // Overview status bar
     QLabel* lblCollector_ = nullptr;
     QLabel* lblTotalPackets_ = nullptr;
     QLabel* lblPps_ = nullptr;
@@ -123,7 +125,7 @@ private:
     QLabel* lblProbability_ = nullptr;
     QLabel* lblStatus_ = nullptr;
 
-    // -- Dashboard Main Chart --
+    // Main PPS chart
     QChart* ppsChart_ = nullptr;
     QLineSeries* ppsSeries_ = nullptr;
     QLineSeries* tcpSeries_ = nullptr;
@@ -134,10 +136,10 @@ private:
     QLineSeries* attackConfidenceUpper_ = nullptr;
     QDateTimeAxis* timeAxis_ = nullptr;
     QValueAxis* ppsAxis_ = nullptr;
-    QValueAxis* confAxis_ = nullptr; // Right axis 0-100
+    QValueAxis* confAxis_ = nullptr;
     InteractiveChartView* ppsChartView_ = nullptr;
 
-    // -- Dashboard Donuts --
+    // Donut charts (CPU, RAM, Traffic Ratio)
     QChart* cpuChart_ = nullptr;
     QPieSeries* cpuPie_ = nullptr;
     QLabel* cpuTitle_ = nullptr;
@@ -148,37 +150,38 @@ private:
     QPieSeries* trafficPie_ = nullptr;
     QLabel* trafficTitle_ = nullptr;
 
-    // -- Deep Analytics Tab --
-    QWidget* tabAnalytics_ = nullptr;
+    // Analytics tab widgets
     AlertGridWidget* sloHealth_ = nullptr;
     NetworkTopologyWidget* topologyWidget_ = nullptr;
-    
     QTableWidget* tableSources_ = nullptr;
     QTableWidget* tableTargets_ = nullptr;
-    
     QChart* topPortsChart_ = nullptr;
     QPieSeries* topPortsPie_ = nullptr;
-    
     QChart* bandwidthChart_ = nullptr;
     QLineSeries* bandwidthSeries_ = nullptr;
     QDateTimeAxis* bwTimeAxis_ = nullptr;
     QValueAxis* bwAxis_ = nullptr;
-
     HeatmapWidget* heatmapWidget_ = nullptr;
-    
     QChart* packetSizeChart_ = nullptr;
     QBarSeries* packetSizeSeries_ = nullptr;
     QBarSet* packetSizeSet_ = nullptr;
     QBarCategoryAxis* sizeCatAxis_ = nullptr;
     QValueAxis* sizeValAxis_ = nullptr;
 
-    // Data 
+    // System metrics
     SystemMetricsCollector metricsCollector_;
     QTimer* metricsTimer_ = nullptr;
+
+    // Tabs
+    QWidget* tabSystem_ = nullptr;
+    QWidget* tabAnalytics_ = nullptr;
+
+    // Data
     std::deque<QDateTime> timeHistory_;
-    uint64_t totalNormal_ = 0;
-    uint64_t totalAttack_ = 0;
-    
+    static constexpr int MAX_CHART_POINTS = 300;
     bool userInteracting_ = false;
     QTimer* autoScrollTimer_ = nullptr;
+    uint64_t totalAttack_ = 0;
+    uint64_t totalNormal_ = 0;
+    bool collectorConnected_ = false;
 };

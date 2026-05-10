@@ -5,6 +5,7 @@
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <deque>
 
 #include "network/TrafficMonitor.hpp"
 #include "network/FeatureExtractor.hpp"
@@ -68,4 +69,7 @@ private:
 
     std::string pcapDumpDir_;
     bool dumpEnabled_ = false;
+
+    // False Positive Mitigation
+    static constexpr double NOISE_THRESHOLD_PPS = 50.0; // Higher threshold for guaranteed silence
 };

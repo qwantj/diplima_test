@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540">
-  <rect width="100%" height="100%" fill="#f7f7f7"/>
-  <rect x="40" y="40" width="880" height="460" fill="#ffffff" stroke="#c7c7c7" stroke-width="2"/>
-  <text x="80" y="110" font-family="Segoe UI, Arial" font-size="28" fill="#333">Qt Install Location</text>
-  <text x="80" y="170" font-family="Segoe UI, Arial" font-size="20" fill="#555">Example path: C:\\Qt\\6.6.2\\mingw_64</text>
-  <rect x="80" y="210" width="720" height="44" fill="#eef7f0" stroke="#8bc49b"/>
-  <text x="95" y="238" font-family="Segoe UI, Arial" font-size="18" fill="#333">C:\\Qt\\6.6.2\\mingw_64</text>
-</svg>

@@ -31,6 +31,14 @@ std::vector<std::pair<std::string, std::string>> TrafficMonitor::listInterfaces(
     return result;
 }
 
+static std::string cleanString(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if (std::isalnum((unsigned char)c)) out += (char)std::tolower((unsigned char)c);
+    }
+    return out;
+}
+
 bool TrafficMonitor::startCapture(const std::string& interfaceName) {
     auto devList = pcpp::PcapLiveDeviceList::getInstance().getPcapLiveDevicesList();
     device_ = nullptr;
@@ -40,19 +48,46 @@ bool TrafficMonitor::startCapture(const std::string& interfaceName) {
         return false;
     }
 
+    std::string query = cleanString(interfaceName);
+    AppLogger::get()->info("TrafficMonitor: searching for interface '{}' (query: '{}')", interfaceName, query);
+
+    // 1. Пытаемся найти точное совпадение по имени или IP
     for (auto* dev : devList) {
-        if (dev->getName() == interfaceName || dev->getDesc() == interfaceName ||
-            std::string(dev->getDesc()).find(interfaceName) != std::string::npos ||
-            dev->getIPv4Address().toString() == interfaceName) {
+        if (dev->getName() == interfaceName || dev->getIPv4Address().toString() == interfaceName) {
             device_ = dev;
             break;
         }
+    }
+
+    // 2. Ищем по очищенному описанию, приоритизируем физические устройства
+    if (!device_) {
+        pcpp::PcapLiveDevice* candidate = nullptr;
+        for (auto* dev : devList) {
+            std::string desc = cleanString(dev->getDesc());
+            if (desc.find(query) != std::string::npos) {
+                // Если это не виртуальный адаптер, берем сразу
+                bool isVirtual = (desc.find("microsoft") != std::string::npos || 
+                                  desc.find("virtual") != std::string::npos ||
+                                  desc.find("hyperv") != std::string::npos ||
+                                  desc.find("miniport") != std::string::npos);
+                
+                if (!isVirtual) {
+                    device_ = dev;
+                    break;
+                } else if (!candidate) {
+                    candidate = dev; // Запоминаем как запасной вариант
+                }
+            }
+        }
+        if (!device_) device_ = candidate;
     }
 
     if (!device_) {
         AppLogger::get()->error("TrafficMonitor: interface '{}' not found.", interfaceName);
         return false;
     }
+
+    AppLogger::get()->info("TrafficMonitor: selected device '{}' ({})", device_->getName(), device_->getDesc());
 
     if (!device_->open()) {
         AppLogger::get()->error("TrafficMonitor: failed to open device '{}'.", interfaceName);

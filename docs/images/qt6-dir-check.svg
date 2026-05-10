@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540">
-  <rect width="100%" height="100%" fill="#1e1e1e"/>
-  <rect x="40" y="40" width="880" height="460" fill="#2b2b2b" stroke="#4a4a4a" stroke-width="2"/>
-  <text x="80" y="110" font-family="Consolas, monospace" font-size="22" fill="#dcdcdc">cmd.exe — check Qt6_DIR</text>
-  <text x="80" y="170" font-family="Consolas, monospace" font-size="18" fill="#dcdcdc">C:\\project&gt; echo %Qt6_DIR%</text>
-  <text x="80" y="210" font-family="Consolas, monospace" font-size="18" fill="#9cdcfe">C:\\Qt\\6.6.2\\mingw_64\\lib\\cmake\\Qt6</text>
-  <text x="80" y="260" font-family="Consolas, monospace" font-size="18" fill="#dcdcdc">C:\\project&gt; cmake -LA -N build | findstr Qt6_DIR</text>
-  <text x="80" y="300" font-family="Consolas, monospace" font-size="18" fill="#9cdcfe">Qt6_DIR:PATH=C:/Qt/6.6.2/mingw_64/lib/cmake/Qt6</text>
-</svg>

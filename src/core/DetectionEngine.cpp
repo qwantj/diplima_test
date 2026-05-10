@@ -132,37 +132,36 @@ void DetectionEngine::processWindow() {
     result.modelName = inferencer_.modelName();
     extractor_.fillTelemetry(result);
 
-    // Skip inference if window has no packets — report as Benign
+    // Skip inference if window has no packets
     if (result.totalPackets == 0) {
-        result.label = 0;
-        result.confidence = 0.0f;
-        result.features = std::vector<double>(8, 0.0);
-        // Don't emit empty windows — nothing to report
         return;
     }
 
-    // Compute features
-    auto rawFeatures = extractor_.computeFeatures();
+    // [Step 1] Noise Threshold Check
+    // We immediately mark low traffic as Benign without calling the AI model.
+    if (result.pps < NOISE_THRESHOLD_PPS) {
+        result.label = 0;
+        result.confidence = 0.0f;
+        result.features = std::vector<double>(8, 0.0);
+        
+        AppLogger::get()->debug("DetectionEngine: PPS ({:.1f}) below threshold ({:.1f}). Marked as Benign.", 
+            result.pps, NOISE_THRESHOLD_PPS);
+            
+        if (resultCallback_) resultCallback_(result);
+        return;
+    }
+
+    // [Step 2] Compute and Normalize Features
     auto features = extractor_.computeNormalizedFeatures();
     if (features.empty() || (int)features.size() != extractor_.featureCount())
         return;
 
     result.features = features;
 
-    // Log raw features for debugging
-    AppLogger::get()->debug("Raw features: FlowDur={:.0f} FwdPkt={:.0f} BwdPkt={:.0f} "
-        "FwdLen={:.0f} BwdLen={:.0f} FwdMean={:.1f} BwdMean={:.1f} PPS={:.1f}",
-        rawFeatures[0], rawFeatures[1], rawFeatures[2], rawFeatures[3],
-        rawFeatures[4], rawFeatures[5], rawFeatures[6], rawFeatures[7]);
-    AppLogger::get()->debug("Normalized: [{:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}, {:.4f}]",
-        features[0], features[1], features[2], features[3],
-        features[4], features[5], features[6], features[7]);
-
-    // Convert to float for ONNX
+    // [Step 3] AI Inference
     std::vector<float> featFloat(features.begin(), features.end());
-
-    // Predict
     auto [label, confidence] = inferencer_.predict(featFloat);
+    
     result.label = label;
     result.confidence = confidence;
 
