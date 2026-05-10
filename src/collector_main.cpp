@@ -86,6 +86,7 @@ int main(int argc, char* argv[]) {
         {{"m", "model"},    "ONNX model path", "path", QString::fromStdString(config.defaultModel)},
         {{"e", "ep"},       "Execution provider (cpu|cuda|dml)", "ep", QString::fromStdString(config.defaultEp)},
         {"list-interfaces", "List available network interfaces"},
+        {"tcp-host",        "TCP server bind address", "host", QString::fromStdString(config.tcpBindHost)},
         {"tcp-port",        "TCP server port", "port", QString::number(config.tcpPort)},
         {"db-host",         "PostgreSQL host", "host", QString::fromStdString(config.dbHost)},
         {"db-port",         "PostgreSQL port", "port", QString::number(config.dbPort)},
@@ -153,9 +154,11 @@ int main(int argc, char* argv[]) {
 
     // Init TCP server
     TcpServer tcpServer;
+    QString tcpHost = parser.value("tcp-host");
     quint16 tcpPort = parser.value("tcp-port").toUShort();
-    if (!tcpServer.startListening(tcpPort)) {
-        AppLogger::get()->error("Failed to start TCP server on port {}", tcpPort);
+    if (!tcpServer.startListening(tcpHost, tcpPort)) {
+        AppLogger::get()->error("Failed to start TCP server on {} port {}",
+            tcpHost.toStdString(), tcpPort);
         return 1;
     }
 

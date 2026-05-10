@@ -16,6 +16,7 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
         f >> j;
 
         config.collectorHost = j.value("collector_host", config.collectorHost);
+        config.tcpBindHost = j.value("tcp_bind_host", config.tcpBindHost);
         config.tcpPort = j.value("tcp_port", config.tcpPort);
 
         if (j.contains("database")) {
@@ -61,6 +62,7 @@ bool ConfigManager::load(const std::string& path, AppConfig& config) {
 bool ConfigManager::save(const std::string& path, const AppConfig& config) {
     nlohmann::json j;
     j["collector_host"] = config.collectorHost;
+    j["tcp_bind_host"] = config.tcpBindHost;
     j["tcp_port"] = config.tcpPort;
 
     j["database"] = {
