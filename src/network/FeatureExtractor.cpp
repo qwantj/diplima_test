@@ -318,7 +318,6 @@ void FeatureExtractor::reset() {
     uniqueSources_.clear();
     sizeHistogram_.assign(5, 0);
 
-
     // Also reset window start time for safety
     windowStart_ = std::chrono::steady_clock::now();
 }

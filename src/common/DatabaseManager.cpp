@@ -2,6 +2,7 @@
 #include "common/AppLogger.hpp"
 #include <QSqlRecord>
 #include <QVariant>
+#include <optional>
 
 static int s_dbConnectionId = 0;
 
@@ -270,7 +271,6 @@ void DatabaseManager::stopAsyncWriter() {
 }
 
 void DatabaseManager::flushEvents(QSqlDatabase& db) {
-    // Используем std::optional для избежания лишней аллокации в куче (heap)
     std::optional<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
         lock.emplace(&dbMutex_);
@@ -282,12 +282,11 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     int throttled = 0;
     bool transactionActive = false;
 
-    // Создаем ОДИН объект запроса и подготавливаем его ОДИН раз для всего метода
     QSqlQuery q(db);
     q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
               "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 
-    // 1. Сначала обрабатываем события из дискового буфера (если они есть)
+    // 1. Process pending events from disk buffer
     if (pendingEventsBuffer_.size() > 0) {
         auto bufferedMessages = pendingEventsBuffer_.readAllAndClear();
         if (!bufferedMessages.empty()) {
@@ -338,13 +337,26 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
         }
     }
 
-    // 2. Обрабатываем живую очередь
+    // 2. Process live queue
     EventEntry entry;
     QVariantList sessionIds, timestamps, labels, confidences, ppsValues, totalPackets, features, modelNames;
+
+    // Optimization: pre-reserve memory to prevent re-allocations
+    int estimatedLiveSize = std::min(static_cast<int>(eventQueue_.size_approx()), MAX_EVENTS_PER_FLUSH);
+    if (estimatedLiveSize > 0) {
+        sessionIds.reserve(estimatedLiveSize);
+        timestamps.reserve(estimatedLiveSize);
+        labels.reserve(estimatedLiveSize);
+        confidences.reserve(estimatedLiveSize);
+        ppsValues.reserve(estimatedLiveSize);
+        totalPackets.reserve(estimatedLiveSize);
+        features.reserve(estimatedLiveSize);
+        modelNames.reserve(estimatedLiveSize);
+    }
+
     int liveCount = 0;
 
     while (eventQueue_.try_dequeue(entry)) {
-        // Если база внезапно закрылась — всё оставшееся отправляем в буфер
         if (!db.isOpen()) {
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
@@ -394,7 +406,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     }
 
     if (throttled > 0) {
-        AppLogger::get()->warn("DatabaseManager: throttled {} events to disk buffer to protect DB.", throttled);
+        AppLogger::get()->warn("DatabaseManager: throttled {} events.", throttled);
     }
 }
 
@@ -407,6 +419,17 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
 
     SnapshotEntry entry;
     QVariantList sessionIds, timestamps, ppsValues, totalPackets, labels;
+
+    // Optimization: pre-reserve memory to prevent re-allocations
+    int estimatedSize = snapshotQueue_.size_approx();
+    if (estimatedSize > 0) {
+        sessionIds.reserve(estimatedSize);
+        timestamps.reserve(estimatedSize);
+        ppsValues.reserve(estimatedSize);
+        totalPackets.reserve(estimatedSize);
+        labels.reserve(estimatedSize);
+    }
+
     int count = 0;
 
     while (snapshotQueue_.try_dequeue(entry)) {
@@ -447,6 +470,19 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
 
     SecurityEventEntry entry;
     QVariantList sessionIds, startTimes, durations, attackerIps, ppsMaxs, typeLabels, confidences;
+
+    // Optimization: pre-reserve memory to prevent re-allocations
+    int estimatedSize = securityEventQueue_.size_approx();
+    if (estimatedSize > 0) {
+        sessionIds.reserve(estimatedSize);
+        startTimes.reserve(estimatedSize);
+        durations.reserve(estimatedSize);
+        attackerIps.reserve(estimatedSize);
+        ppsMaxs.reserve(estimatedSize);
+        typeLabels.reserve(estimatedSize);
+        confidences.reserve(estimatedSize);
+    }
+
     int count = 0;
 
     while (securityEventQueue_.try_dequeue(entry)) {

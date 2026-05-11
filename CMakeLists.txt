@@ -11,8 +11,6 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # ---------- Qt6 ----------
-enable_testing()
-
 # Prevent Qt from finding Vulkan headers in msys64 (causes MSVC/MinGW header conflict)
 set(CMAKE_IGNORE_PATH "C:/msys64/mingw64/include" "C:/msys64/mingw64/lib")
 find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts Test)
@@ -159,29 +157,9 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
 )
 
 # =========================================================
-#  Tests
+#  Tests & Models
 # =========================================================
 enable_testing()
-find_package(Qt6 REQUIRED COMPONENTS Test)
-
-add_executable(unit_tests
-    tests/unit/test_main.cpp
-)
-
-target_link_libraries(unit_tests PRIVATE
-    ddos_core
-    Qt6::Test
-)
-
-add_test(NAME unit_tests COMMAND unit_tests)
-
-# =========================================================
-#  Copy models to output directories
-# =========================================================
-#  Tests
-# =========================================================
-enable_testing()
-add_subdirectory(tests)
 
 # --- Copy models and config to build directory ---
 add_custom_command(TARGET ddos_collector POST_BUILD

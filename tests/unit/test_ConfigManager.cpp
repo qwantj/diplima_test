@@ -2,11 +2,17 @@
 #include <QTemporaryFile>
 #include "common/ConfigManager.hpp"
 #include <fstream>
+#include <QFile>
 
 void TestConfigManager::testLoadValidJson() {
-        QTemporaryFile tempFile;
-        QVERIFY(tempFile.open());
-        QString filePath = tempFile.fileName();
+        QString filePath;
+        {
+            QTemporaryFile tempFile;
+            tempFile.setAutoRemove(false);
+            QVERIFY(tempFile.open());
+            filePath = tempFile.fileName();
+            tempFile.close();
+        }
 
         std::ofstream f(filePath.toStdString());
         f << R"({
@@ -33,6 +39,8 @@ void TestConfigManager::testLoadValidJson() {
 
         AppConfig config;
         bool result = ConfigManager::load(filePath.toStdString(), config);
+
+        QFile::remove(filePath);
 
         QVERIFY(result);
         QCOMPARE(QString::fromStdString(config.collectorHost), QString("192.168.1.10"));
@@ -68,9 +76,14 @@ void TestConfigManager::testLoadMissingFile() {
     }
 
 void TestConfigManager::testLoadInvalidJson() {
-        QTemporaryFile tempFile;
-        QVERIFY(tempFile.open());
-        QString filePath = tempFile.fileName();
+        QString filePath;
+        {
+            QTemporaryFile tempFile;
+            tempFile.setAutoRemove(false);
+            QVERIFY(tempFile.open());
+            filePath = tempFile.fileName();
+            tempFile.close();
+        }
 
         std::ofstream f(filePath.toStdString());
         f << R"({
@@ -83,6 +96,8 @@ void TestConfigManager::testLoadInvalidJson() {
         AppConfig config;
         bool result = ConfigManager::load(filePath.toStdString(), config);
 
+        QFile::remove(filePath);
+
         QVERIFY(!result);
         // Values should remain as defaults since load returns false on exception
         QCOMPARE(QString::fromStdString(config.collectorHost), QString("localhost"));
@@ -90,9 +105,14 @@ void TestConfigManager::testLoadInvalidJson() {
     }
 
 void TestConfigManager::testLoadPartialJson() {
-        QTemporaryFile tempFile;
-        QVERIFY(tempFile.open());
-        QString filePath = tempFile.fileName();
+        QString filePath;
+        {
+            QTemporaryFile tempFile;
+            tempFile.setAutoRemove(false);
+            QVERIFY(tempFile.open());
+            filePath = tempFile.fileName();
+            tempFile.close();
+        }
 
         std::ofstream f(filePath.toStdString());
         f << R"({
@@ -105,6 +125,8 @@ void TestConfigManager::testLoadPartialJson() {
         config.collectorHost = "custom_host";
 
         bool result = ConfigManager::load(filePath.toStdString(), config);
+
+        QFile::remove(filePath);
 
         QVERIFY(result);
         // Modified values
