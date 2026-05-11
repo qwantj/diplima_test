@@ -305,7 +305,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                     confidences << r.confidence;
                     ppsValues << r.pps;
                     totalPackets << static_cast<qint64>(r.totalPackets);
-                    features << QString::fromStdString(r.featuresJson().dump());
+                    features << QString::fromStdString(nlohmann::json(r.features).dump());
                     modelNames << QString::fromStdString(r.modelName);
                     bufferedCount++;
                 } catch (const std::exception& e) {
