@@ -211,6 +211,7 @@ add_executable(ddos_unit_tests
     tests/unit/main.cpp
     tests/unit/test_ConfigManager.cpp
     tests/unit/test_Protocol.cpp
+    tests/unit/test_FileBuffer.cpp
 )
 
 target_link_libraries(ddos_unit_tests PRIVATE
