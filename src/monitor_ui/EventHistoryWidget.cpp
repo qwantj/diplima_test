@@ -1,5 +1,6 @@
 #include "monitor_ui/EventHistoryWidget.hpp"
 #include "monitor_ui/ThemePalette.hpp"
+#include "common/CSVUtils.hpp"
 
 #include <QHeaderView>
 #include <QLabel>
@@ -195,7 +196,7 @@ void EventHistoryWidget::exportToCsv() {
         if (table_->isRowHidden(r)) continue;
         for (int c = 0; c < 6; c++) {
             if (c > 0) out << ",";
-            out << table_->item(r, c)->text();
+            out << CSVUtils::sanitizeField(table_->item(r, c)->text());
         }
         out << "\n";
     }
