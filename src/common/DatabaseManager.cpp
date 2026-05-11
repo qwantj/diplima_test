@@ -330,7 +330,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                     db.commit();
                     AppLogger::get()->info("DatabaseManager: restored and flushed {} buffered offline events.", bufferedCount);
                 } else {
-                    AppLogger::get()->error("DatabaseManager: failed to batch flush {} buffered events: {}",
+                    AppLogger::get()->error("DatabaseManager: failed to batch flush {} buffered events: {}", 
                         bufferedCount, q.lastError().text().toStdString());
                     db.rollback();
                 }
@@ -387,7 +387,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
         if (q.execBatch()) {
             db.commit();
         } else {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} live events: {}",
+            AppLogger::get()->error("DatabaseManager: failed to batch flush {} live events: {}", 
                 liveCount, q.lastError().text().toStdString());
             db.rollback();
         }
@@ -429,7 +429,7 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
         q.bindValue(4, labels);
 
         if (!q.execBatch()) {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} snapshots: {}",
+            AppLogger::get()->error("DatabaseManager: failed to batch flush {} snapshots: {}", 
                 count, q.lastError().text().toStdString());
             db.rollback();
         } else {
@@ -473,7 +473,7 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
         q.bindValue(6, confidences);
 
         if (!q.execBatch()) {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} security events: {}",
+            AppLogger::get()->error("DatabaseManager: failed to batch flush {} security events: {}", 
                 count, q.lastError().text().toStdString());
             db.rollback();
         } else {
