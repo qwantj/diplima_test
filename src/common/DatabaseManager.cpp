@@ -188,7 +188,9 @@ std::vector<DetectionResult> DatabaseManager::getEventsForSession(int sessionId)
         try {
             auto j = nlohmann::json::parse(q.value(5).toString().toStdString());
             r.features = j.get<std::vector<double>>();
-        } catch(...) {}
+        } catch(const std::exception& e) {
+            AppLogger::get()->error("Failed to parse features JSON for session {}: {}", sessionId, e.what());
+        }
         result.push_back(r);
     }
     return result;
@@ -268,6 +270,7 @@ void DatabaseManager::stopAsyncWriter() {
 }
 
 void DatabaseManager::flushEvents(QSqlDatabase& db) {
+    // Используем std::optional для избежания лишней аллокации в куче (heap)
     std::optional<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
         lock.emplace(&dbMutex_);
@@ -275,7 +278,14 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
 
     if (!db.isOpen()) return;
 
+    int count = 0;
     int throttled = 0;
+    bool transactionActive = false;
+
+    // Создаем ОДИН объект запроса и подготавливаем его ОДИН раз для всего метода
+    QSqlQuery q(db);
+    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 
     // 1. Сначала обрабатываем события из дискового буфера (если они есть)
     if (pendingEventsBuffer_.size() > 0) {
@@ -298,7 +308,9 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                     features << QString::fromStdString(r.featuresJson().dump());
                     modelNames << QString::fromStdString(r.modelName);
                     bufferedCount++;
-                } catch (...) {}
+                } catch (const std::exception& e) {
+                    AppLogger::get()->error("Failed to parse buffered offline event: {}", e.what());
+                }
             }
 
             if (bufferedCount > 0) {
@@ -318,7 +330,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                     db.commit();
                     AppLogger::get()->info("DatabaseManager: restored and flushed {} buffered offline events.", bufferedCount);
                 } else {
-                    AppLogger::get()->error("DatabaseManager: failed to batch flush {} buffered events: {}",
+                    AppLogger::get()->error("DatabaseManager: failed to batch flush {} buffered events: {}", 
                         bufferedCount, q.lastError().text().toStdString());
                     db.rollback();
                 }
@@ -332,6 +344,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     int liveCount = 0;
 
     while (eventQueue_.try_dequeue(entry)) {
+        // Если база внезапно закрылась — всё оставшееся отправляем в буфер
         if (!db.isOpen()) {
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
@@ -374,7 +387,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
         if (q.execBatch()) {
             db.commit();
         } else {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} live events: {}",
+            AppLogger::get()->error("DatabaseManager: failed to batch flush {} live events: {}", 
                 liveCount, q.lastError().text().toStdString());
             db.rollback();
         }
@@ -391,8 +404,6 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     if (db.connectionName() == connectionName_) {
         lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
     }
-
-    if (!db.isOpen()) return;
 
     SnapshotEntry entry;
     QVariantList sessionIds, timestamps, ppsValues, totalPackets, labels;
@@ -418,7 +429,7 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
         q.bindValue(4, labels);
 
         if (!q.execBatch()) {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} snapshots: {}",
+            AppLogger::get()->error("DatabaseManager: failed to batch flush {} snapshots: {}", 
                 count, q.lastError().text().toStdString());
             db.rollback();
         } else {
@@ -433,8 +444,6 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     if (db.connectionName() == connectionName_) {
         lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
     }
-
-    if (!db.isOpen()) return;
 
     SecurityEventEntry entry;
     QVariantList sessionIds, startTimes, durations, attackerIps, ppsMaxs, typeLabels, confidences;
@@ -464,7 +473,7 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
         q.bindValue(6, confidences);
 
         if (!q.execBatch()) {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} security events: {}",
+            AppLogger::get()->error("DatabaseManager: failed to batch flush {} security events: {}", 
                 count, q.lastError().text().toStdString());
             db.rollback();
         } else {
