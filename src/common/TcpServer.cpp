@@ -47,7 +47,13 @@ void TcpServer::incomingConnection(qintptr socketDescriptor) {
         for (const auto& msg : messages) {
             try {
                 items.push_back(nlohmann::json::parse(msg.toStdString()));
-            } catch (...) {} // Ignore corrupted lines
+            } catch (const std::exception& e) {
+                std::string rawData = msg.toStdString();
+                if (rawData.length() > 100) {
+                    rawData = rawData.substr(0, 100) + "...";
+                }
+                AppLogger::get()->warn("TcpServer: failed to parse buffered message: {}. Raw data: {}", e.what(), rawData);
+            }
         }
         bufferMsg["items"] = items;
         QByteArray framed = Protocol::frame(QByteArray::fromStdString(bufferMsg.dump()));
