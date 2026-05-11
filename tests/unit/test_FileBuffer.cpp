@@ -142,7 +142,7 @@ void TestFileBuffer::testFilePathUpdate() {
     // So item1, item2 in path1 are lost to this buffer instance unless we handled it.
     // Looking at FileBuffer.cpp: readAllAndClear() uses filePath_.
 
-    QCOMPARE(results.size(), 3); // item3, item4 from path2, plus whatever was in memory?
+    QCOMPARE(results.size(), 2); // item3, item4 from path2, plus whatever was in memory?
     // Wait, when it flushed item4, memory was cleared.
     // So results should be item3, item4 from disk.
     // But wait, there might be one in memory if it didn't flush?

@@ -13,9 +13,16 @@ add_test(NAME db_benchmark_qt COMMAND db_benchmark_qt)
 
 add_executable(ddos_unit_tests
     unit/main.cpp
+    unit/test_ConfigManager.hpp
+    unit/test_ConfigManager.cpp
+    unit/ProtocolTests.hpp
     unit/ProtocolTests.cpp
+    unit/CSVUtilsTests.hpp
     unit/CSVUtilsTests.cpp
+    unit/test_FileBuffer.hpp
     unit/test_FileBuffer.cpp
+    unit/test_ModelInferencer.hpp
+    unit/test_ModelInferencer.cpp
 )
 
 target_link_libraries(ddos_unit_tests PRIVATE

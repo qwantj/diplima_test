@@ -2,9 +2,10 @@
 #include <QtTest>
 
 #include "test_ConfigManager.hpp"
-#include "test_Protocol.hpp"
+#include "ProtocolTests.hpp"
 #include "test_FileBuffer.hpp"
 #include "CSVUtilsTests.hpp"
+#include "test_ModelInferencer.hpp"
 
 int main(int argc, char *argv[])
 {
@@ -15,7 +16,7 @@ int main(int argc, char *argv[])
     TestConfigManager configTest;
     status |= QTest::qExec(&configTest, argc, argv);
 
-    TestProtocol protocolTest;
+    ProtocolTests protocolTest;
     status |= QTest::qExec(&protocolTest, argc, argv);
 
     TestFileBuffer fileBufferTest;
@@ -23,6 +24,9 @@ int main(int argc, char *argv[])
 
     CSVUtilsTests csvTest;
     status |= QTest::qExec(&csvTest, argc, argv);
+
+    TestModelInferencer modelTest;
+    status |= QTest::qExec(&modelTest, argc, argv);
 
     return status;
 }
