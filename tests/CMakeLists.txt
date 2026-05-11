@@ -10,6 +10,7 @@ add_executable(ddos_unit_tests
     unit/main.cpp
     unit/ProtocolTests.cpp
     unit/CSVUtilsTests.cpp
+    unit/test_FileBuffer.cpp
 )
 
 target_link_libraries(ddos_unit_tests PRIVATE
