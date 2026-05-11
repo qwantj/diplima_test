@@ -32,6 +32,36 @@ target_link_libraries(ddos_unit_tests PRIVATE
     nlohmann_json::nlohmann_json
 )
 
+# Run windeployqt for tests
+add_custom_command(TARGET ddos_unit_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Running windeployqt for ddos_unit_tests"
+    COMMAND Qt6::windeployqt --test "$<TARGET_FILE:ddos_unit_tests>"
+)
+
+add_custom_command(TARGET db_benchmark_qt POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Running windeployqt for db_benchmark_qt"
+    COMMAND Qt6::windeployqt --test "$<TARGET_FILE:db_benchmark_qt>"
+)
+
+# Copy onnxruntime.dll and libpq.dll to tests directory
+if(ONNXRUNTIME_FOUND AND EXISTS "${ONNXRUNTIME_DLL}")
+    add_custom_command(TARGET ddos_unit_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ONNXRUNTIME_DLL}" "$<TARGET_FILE_DIR:ddos_unit_tests>"
+    )
+endif()
+
+# We need LIBPQ_DLL_PATH from root, but it's not exported. 
+# Let's find it again or assume it's in vcpkg
+find_file(LIBPQ_DLL_TEST libpq.dll PATHS "C:/Dev/vcpkg/installed/x64-windows/bin")
+if(LIBPQ_DLL_TEST)
+    add_custom_command(TARGET ddos_unit_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LIBPQ_DLL_TEST}" "$<TARGET_FILE_DIR:ddos_unit_tests>"
+    )
+    add_custom_command(TARGET db_benchmark_qt POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LIBPQ_DLL_TEST}" "$<TARGET_FILE_DIR:db_benchmark_qt>"
+    )
+endif()
+
 # Optional: Add any definitions if needed
 # target_compile_definitions(ddos_unit_tests PRIVATE ...)
 

@@ -14,28 +14,31 @@ void TestConfigManager::testLoadValidJson() {
             tempFile.close();
         }
 
-        std::ofstream f(filePath.toStdString());
-        f << R"({
-            "collector_host": "192.168.1.10",
-            "tcp_port": 12345,
-            "database": {
-                "host": "db.local",
-                "port": 5433,
-                "name": "test_db",
-                "user": "test_user",
-                "password": "test_password"
-            },
-            "ml": {
-                "default_model": "test_model.onnx",
-                "default_ep": "gpu",
-                "window_sec": 5.0
-            },
-            "network": {
-                "default_interface": "eth0",
-                "max_queue_size": 1000
-            }
-        })";
-        f.close();
+        {
+            QFile f(filePath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(R"({
+                "collector_host": "192.168.1.10",
+                "tcp_port": 12345,
+                "database": {
+                    "host": "db.local",
+                    "port": 5433,
+                    "name": "test_db",
+                    "user": "test_user",
+                    "password": "test_password"
+                },
+                "ml": {
+                    "default_model": "test_model.onnx",
+                    "default_ep": "gpu",
+                    "window_sec": 5.0
+                },
+                "network": {
+                    "default_interface": "eth0",
+                    "max_queue_size": 1000
+                }
+            })");
+            f.close();
+        }
 
         AppConfig config;
         bool result = ConfigManager::load(filePath.toStdString(), config);
@@ -85,13 +88,16 @@ void TestConfigManager::testLoadInvalidJson() {
             tempFile.close();
         }
 
-        std::ofstream f(filePath.toStdString());
-        f << R"({
-            "collector_host": "192.168.1.10",
-            "tcp_port": 12345,
-            INVALID JSON HERE
-        })";
-        f.close();
+        {
+            QFile f(filePath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(R"({
+                "collector_host": "192.168.1.10",
+                "tcp_port": 12345,
+                INVALID JSON HERE
+            })");
+            f.close();
+        }
 
         AppConfig config;
         bool result = ConfigManager::load(filePath.toStdString(), config);
@@ -114,11 +120,14 @@ void TestConfigManager::testLoadPartialJson() {
             tempFile.close();
         }
 
-        std::ofstream f(filePath.toStdString());
-        f << R"({
-            "tcp_port": 8080
-        })";
-        f.close();
+        {
+            QFile f(filePath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write(R"({
+                "tcp_port": 8080
+            })");
+            f.close();
+        }
 
         AppConfig config;
         // Pre-modify a default to check it stays

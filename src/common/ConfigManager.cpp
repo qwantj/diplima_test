@@ -6,11 +6,12 @@
 #include <cstdlib>
 
 bool ConfigManager::load(const std::string& path, AppConfig& config) {
-    if (!std::filesystem::exists(path)) {
+    std::filesystem::path p = std::filesystem::u8path(path);
+    if (!std::filesystem::exists(p)) {
         AppLogger::get()->warn("ConfigManager: file '{}' does not exist, using defaults.", path);
         return false;
     }
-    std::ifstream f(path);
+    std::ifstream f(p);
     if (!f.is_open()) {
         AppLogger::get()->warn("ConfigManager: could not open '{}', using defaults.", path);
         return false;
@@ -89,7 +90,8 @@ bool ConfigManager::save(const std::string& path, const AppConfig& config) {
         {"max_queue_size", config.maxQueueSize}
     };
 
-    std::ofstream f(path);
+    std::filesystem::path p = std::filesystem::u8path(path);
+    std::ofstream f(p);
     if (!f.is_open()) return false;
 
     f << std::setw(4) << j << std::endl;

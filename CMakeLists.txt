@@ -185,3 +185,4 @@ add_custom_command(TARGET ddos_monitor POST_BUILD
 # =========================================================
 #  ddos_unit_tests
 # =========================================================
+add_subdirectory(tests)

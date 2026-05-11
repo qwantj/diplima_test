@@ -67,10 +67,14 @@ void TestFileBuffer::testFlushToDisk() {
 }
 
 void TestFileBuffer::testReadAllAndClearMixed() {
-    QTemporaryFile tempFile;
-    QVERIFY(tempFile.open());
-    QString path = tempFile.fileName();
-    tempFile.close();
+    QString path;
+    {
+        QTemporaryFile tempFile;
+        tempFile.setAutoRemove(false);
+        QVERIFY(tempFile.open());
+        path = tempFile.fileName();
+        tempFile.close();
+    }
 
     FileBuffer buffer(path, 2);
     buffer.push("disk1");
@@ -94,10 +98,14 @@ void TestFileBuffer::testReadAllAndClearMixed() {
 }
 
 void TestFileBuffer::testClear() {
-    QTemporaryFile tempFile;
-    QVERIFY(tempFile.open());
-    QString path = tempFile.fileName();
-    tempFile.close();
+    QString path;
+    {
+        QTemporaryFile tempFile;
+        tempFile.setAutoRemove(false);
+        QVERIFY(tempFile.open());
+        path = tempFile.fileName();
+        tempFile.close();
+    }
 
     FileBuffer buffer(path, 2);
     buffer.push("item1");
