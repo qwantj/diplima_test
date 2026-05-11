@@ -188,7 +188,9 @@ std::vector<DetectionResult> DatabaseManager::getEventsForSession(int sessionId)
         try {
             auto j = nlohmann::json::parse(q.value(5).toString().toStdString());
             r.features = j.get<std::vector<double>>();
-        } catch(...) {}
+        } catch(const std::exception& e) {
+            AppLogger::get()->error("Failed to parse features JSON for session {}: {}", sessionId, e.what());
+        }
         result.push_back(r);
     }
     return result;
@@ -309,8 +311,8 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                     if (q.exec()) {
                         ++count;
                     }
-                } catch (...) {
-                    // Логирование ошибки парсинга/выполнения (рекомендуется добавить)
+                } catch (const std::exception& e) {
+                    AppLogger::get()->error("Failed to parse buffered offline event: {}", e.what());
                 }
             }
             
