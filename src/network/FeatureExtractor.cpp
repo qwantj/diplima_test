@@ -317,7 +317,6 @@ void FeatureExtractor::reset() {
     targetCounts_.clear();
     uniqueSources_.clear();
     sizeHistogram_.assign(5, 0);
-    flowInitiators_.clear();
 
     // Also reset window start time for safety
     windowStart_ = std::chrono::steady_clock::now();

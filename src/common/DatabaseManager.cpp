@@ -2,6 +2,7 @@
 #include "common/AppLogger.hpp"
 #include <QSqlRecord>
 #include <QVariant>
+#include <optional>
 
 static int s_dbConnectionId = 0;
 
@@ -268,7 +269,6 @@ void DatabaseManager::stopAsyncWriter() {
 }
 
 void DatabaseManager::flushEvents(QSqlDatabase& db) {
-    // Используем std::optional для избежания лишней аллокации в куче (heap)
     std::optional<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
         lock.emplace(&dbMutex_);
@@ -280,18 +280,17 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     int throttled = 0;
     bool transactionActive = false;
 
-    // Создаем ОДИН объект запроса и подготавливаем его ОДИН раз для всего метода
     QSqlQuery q(db);
     q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
               "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 
-    // 1. Сначала обрабатываем события из дискового буфера (если они есть)
+    // 1. Process pending events from disk buffer
     if (pendingEventsBuffer_.size() > 0) {
         auto bufferedMessages = pendingEventsBuffer_.readAllAndClear();
         if (!bufferedMessages.empty()) {
             db.transaction();
-            QSqlQuery q(db);
-            q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
+            transactionActive = true;
+            
             for (const auto& msg : bufferedMessages) {
                 try {
                     auto j = nlohmann::json::parse(msg.toStdString());
@@ -303,35 +302,31 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                     q.bindValue(3, r.confidence);
                     q.bindValue(4, r.pps);
                     q.bindValue(5, static_cast<qint64>(r.totalPackets));
-                    q.bindValue(6, QString::fromStdString(r.featuresJson().dump()));
+                    q.bindValue(6, QString::fromStdString(nlohmann::json(r.features).dump()));
                     q.bindValue(7, QString::fromStdString(r.modelName));
 
                     if (q.exec()) {
                         ++count;
                     }
-                } catch (...) {
-                    // Логирование ошибки парсинга/выполнения (рекомендуется добавить)
-                }
+                } catch (...) {}
             }
             
             db.commit();
-            AppLogger::get()->info("DatabaseManager: restored and flushed {} buffered offline events.", count);
+            AppLogger::get()->info("DatabaseManager: flushed {} buffered events.", count);
             count = 0;
             transactionActive = false;
         }
     }
 
-    // 2. Обрабатываем живую очередь
+    // 2. Process live queue
     EventEntry entry;
     while (eventQueue_.try_dequeue(entry)) {
-        // Если база внезапно закрылась — всё оставшееся отправляем в буфер
         if (!db.isOpen()) {
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
             continue;
         }
 
-        // Защита от перегрузки (Throttling)
         if (count >= MAX_EVENTS_PER_FLUSH) {
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
@@ -365,7 +360,7 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     }
 
     if (throttled > 0) {
-        AppLogger::get()->warn("DatabaseManager: throttled {} events to disk buffer to protect DB.", throttled);
+        AppLogger::get()->warn("DatabaseManager: throttled {} events.", throttled);
     }
 }
 
@@ -390,8 +385,9 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
         q.exec();
         ++count;
     }
+    db.commit();
     if (count > 0)
-        AppLogger::get()->info("DatabaseManager: flushed {} stats snapshots.", count);
+        AppLogger::get()->info("DatabaseManager: flushed {} snapshots.", count);
 }
 
 void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
@@ -416,6 +412,7 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
         q.exec();
         ++count;
     }
+    db.commit();
     if (count > 0)
-        AppLogger::get()->info("DatabaseManager: flushed {} security events.", count);
+        AppLogger::get()->info("DatabaseManager: flushed {} incidents.", count);
 }

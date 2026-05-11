@@ -186,11 +186,6 @@ int main(int argc, char* argv[]) {
     uint64_t benignCount = 0;
 
     int sessionId = -1;
-    // Stats counters
-    uint64_t totalPackets = 0;
-    uint64_t attackCount = 0;
-    uint64_t benignCount = 0;
-
     auto createNewSession = [&](const QString& iface, const QString& model) {
         if (dbConnected) {
             if (sessionId > 0) {
