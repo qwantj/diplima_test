@@ -146,3 +146,17 @@ Identified multiple instances of inefficient string concatenations inside loops 
   - Original implementation: `201 ms`
   - Optimized implementation: `110 ms`
   - Improvement: `45.27%`
+
+## [Batch Insertion for Security Events and Snapshots]
+### Issue
+The database flushing logic for security events and snapshots used an N+1 query pattern, executing individual INSERT statements for each record within a transaction.
+
+### Optimization
+Refactored `flushSecurityEvents`, `flushSnapshots`, and `flushEvents` (including buffered events) to use Qt's `QSqlQuery::execBatch()` mechanism. This allows sending a single batch command to the PostgreSQL server for all pending records in the queue.
+
+### Expected Impact
+- **Database I/O Latency**: Significantly reduced by minimizing round-trips to the database server.
+- **Transaction Overhead**: Reduced by ensuring all batch operations are atomic and correctly committed or rolled back.
+- **CPU Efficiency**: Reduced driver-level overhead for query preparation and binding.
+
+*Note: While a live benchmark was not feasible in the restricted sandbox environment, this optimization follows industry-standard best practices for high-performance database interactions in Qt6/PostgreSQL applications.*
