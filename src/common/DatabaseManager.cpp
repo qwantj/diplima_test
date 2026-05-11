@@ -317,14 +317,14 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                 db.transaction();
                 QSqlQuery q(db);
                 q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
-                q.addBindValue(sessionIds);
-                q.addBindValue(timestamps);
-                q.addBindValue(labels);
-                q.addBindValue(confidences);
-                q.addBindValue(ppsValues);
-                q.addBindValue(totalPackets);
-                q.addBindValue(features);
-                q.addBindValue(modelNames);
+                q.bindValue(0, sessionIds);
+                q.bindValue(1, timestamps);
+                q.bindValue(2, labels);
+                q.bindValue(3, confidences);
+                q.bindValue(4, ppsValues);
+                q.bindValue(5, totalPackets);
+                q.bindValue(6, features);
+                q.bindValue(7, modelNames);
 
                 if (q.execBatch()) {
                     db.commit();
@@ -334,14 +334,13 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                         bufferedCount, q.lastError().text().toStdString());
                     db.rollback();
                 }
-                transactionActive = false;
             }
         }
     }
 
     // 2. Обрабатываем живую очередь
     EventEntry entry;
-    QVariantList liveSessionIds, liveTimestamps, liveLabels, liveConfidences, livePpsValues, liveTotalPackets, liveFeatures, liveModelNames;
+    QVariantList sessionIds, timestamps, labels, confidences, ppsValues, totalPackets, features, modelNames;
     int liveCount = 0;
 
     while (eventQueue_.try_dequeue(entry)) {
@@ -352,7 +351,6 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
             continue;
         }
 
-        // Защита от перегрузки (Throttling)
         if (liveCount >= MAX_EVENTS_PER_FLUSH) {
             nlohmann::json j = Protocol::serializeResult(entry.result);
             pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
@@ -360,35 +358,37 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
             continue;
         }
 
-        liveSessionIds << entry.result.sessionId;
-        liveTimestamps << entry.result.timestamp;
-        liveLabels << entry.result.label;
-        liveConfidences << entry.result.confidence;
-        livePpsValues << entry.result.pps;
-        liveTotalPackets << static_cast<qint64>(entry.result.totalPackets);
-        liveFeatures << QString::fromStdString(entry.result.featuresJson().dump());
-        liveModelNames << QString::fromStdString(entry.result.modelName);
+        sessionIds << entry.result.sessionId;
+        timestamps << entry.result.timestamp;
+        labels << entry.result.label;
+        confidences << entry.result.confidence;
+        ppsValues << entry.result.pps;
+        totalPackets << static_cast<qint64>(entry.result.totalPackets);
+
+        nlohmann::json featJson = entry.result.features;
+        features << QString::fromStdString(featJson.dump());
+        modelNames << QString::fromStdString(entry.result.modelName);
         liveCount++;
     }
 
     if (liveCount > 0) {
         db.transaction();
-        QSqlQuery liveQ(db);
-        liveQ.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
-        liveQ.addBindValue(liveSessionIds);
-        liveQ.addBindValue(liveTimestamps);
-        liveQ.addBindValue(liveLabels);
-        liveQ.addBindValue(liveConfidences);
-        liveQ.addBindValue(livePpsValues);
-        liveQ.addBindValue(liveTotalPackets);
-        liveQ.addBindValue(liveFeatures);
-        liveQ.addBindValue(liveModelNames);
+        QSqlQuery q(db);
+        q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
+        q.bindValue(0, sessionIds);
+        q.bindValue(1, timestamps);
+        q.bindValue(2, labels);
+        q.bindValue(3, confidences);
+        q.bindValue(4, ppsValues);
+        q.bindValue(5, totalPackets);
+        q.bindValue(6, features);
+        q.bindValue(7, modelNames);
 
-        if (liveQ.execBatch()) {
+        if (q.execBatch()) {
             db.commit();
         } else {
             AppLogger::get()->error("DatabaseManager: failed to batch flush {} live events: {}",
-                liveCount, liveQ.lastError().text().toStdString());
+                liveCount, q.lastError().text().toStdString());
             db.rollback();
         }
     }
@@ -413,28 +413,28 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
         sessionIds << entry.sessionId;
         timestamps << entry.timestamp;
         ppsValues << entry.pps;
-        totalPackets << (qint64)entry.totalPackets;
+        totalPackets << static_cast<qint64>(entry.totalPackets);
         labels << entry.currentLabel;
-        ++count;
+        count++;
     }
 
     if (count > 0) {
         db.transaction();
         QSqlQuery q(db);
         q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
-        q.addBindValue(sessionIds);
-        q.addBindValue(timestamps);
-        q.addBindValue(ppsValues);
-        q.addBindValue(totalPackets);
-        q.addBindValue(labels);
+        q.bindValue(0, sessionIds);
+        q.bindValue(1, timestamps);
+        q.bindValue(2, ppsValues);
+        q.bindValue(3, totalPackets);
+        q.bindValue(4, labels);
 
-        if (q.execBatch()) {
-            db.commit();
-            AppLogger::get()->info("DatabaseManager: flushed {} stats snapshots.", count);
-        } else {
+        if (!q.execBatch()) {
             AppLogger::get()->error("DatabaseManager: failed to batch flush {} snapshots: {}",
                 count, q.lastError().text().toStdString());
             db.rollback();
+        } else {
+            db.commit();
+            AppLogger::get()->info("DatabaseManager: flushed {} stats snapshots.", count);
         }
     }
 }
@@ -446,7 +446,7 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     }
 
     SecurityEventEntry entry;
-    QVariantList sessionIds, startTimes, durations, attackerIps, ppsMaxValues, typeLabels, confidences;
+    QVariantList sessionIds, startTimes, durations, attackerIps, ppsMaxs, typeLabels, confidences;
     int count = 0;
 
     while (securityEventQueue_.try_dequeue(entry)) {
@@ -454,31 +454,31 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
         startTimes << entry.startTime;
         durations << entry.duration;
         attackerIps << entry.attackerIp;
-        ppsMaxValues << entry.ppsMax;
+        ppsMaxs << entry.ppsMax;
         typeLabels << entry.typeLabel;
         confidences << entry.confidence;
-        ++count;
+        count++;
     }
 
     if (count > 0) {
         db.transaction();
         QSqlQuery q(db);
         q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
-        q.addBindValue(sessionIds);
-        q.addBindValue(startTimes);
-        q.addBindValue(durations);
-        q.addBindValue(attackerIps);
-        q.addBindValue(ppsMaxValues);
-        q.addBindValue(typeLabels);
-        q.addBindValue(confidences);
+        q.bindValue(0, sessionIds);
+        q.bindValue(1, startTimes);
+        q.bindValue(2, durations);
+        q.bindValue(3, attackerIps);
+        q.bindValue(4, ppsMaxs);
+        q.bindValue(5, typeLabels);
+        q.bindValue(6, confidences);
 
-        if (q.execBatch()) {
-            db.commit();
-            AppLogger::get()->info("DatabaseManager: flushed {} security events.", count);
-        } else {
+        if (!q.execBatch()) {
             AppLogger::get()->error("DatabaseManager: failed to batch flush {} security events: {}",
                 count, q.lastError().text().toStdString());
             db.rollback();
+        } else {
+            db.commit();
+            AppLogger::get()->info("DatabaseManager: flushed {} security events.", count);
         }
     }
 }
