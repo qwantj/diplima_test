@@ -341,6 +341,20 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     // 2. Обрабатываем живую очередь
     EventEntry entry;
     QVariantList sessionIds, timestamps, labels, confidences, ppsValues, totalPackets, features, modelNames;
+
+    // Optimization: pre-reserve memory to prevent re-allocations
+    int estimatedLiveSize = std::min(static_cast<int>(eventQueue_.size_approx()), MAX_EVENTS_PER_FLUSH);
+    if (estimatedLiveSize > 0) {
+        sessionIds.reserve(estimatedLiveSize);
+        timestamps.reserve(estimatedLiveSize);
+        labels.reserve(estimatedLiveSize);
+        confidences.reserve(estimatedLiveSize);
+        ppsValues.reserve(estimatedLiveSize);
+        totalPackets.reserve(estimatedLiveSize);
+        features.reserve(estimatedLiveSize);
+        modelNames.reserve(estimatedLiveSize);
+    }
+
     int liveCount = 0;
 
     while (eventQueue_.try_dequeue(entry)) {
@@ -407,6 +421,17 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
 
     SnapshotEntry entry;
     QVariantList sessionIds, timestamps, ppsValues, totalPackets, labels;
+
+    // Optimization: pre-reserve memory to prevent re-allocations
+    int estimatedSize = snapshotQueue_.size_approx();
+    if (estimatedSize > 0) {
+        sessionIds.reserve(estimatedSize);
+        timestamps.reserve(estimatedSize);
+        ppsValues.reserve(estimatedSize);
+        totalPackets.reserve(estimatedSize);
+        labels.reserve(estimatedSize);
+    }
+
     int count = 0;
 
     while (snapshotQueue_.try_dequeue(entry)) {
@@ -447,6 +472,19 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
 
     SecurityEventEntry entry;
     QVariantList sessionIds, startTimes, durations, attackerIps, ppsMaxs, typeLabels, confidences;
+
+    // Optimization: pre-reserve memory to prevent re-allocations
+    int estimatedSize = securityEventQueue_.size_approx();
+    if (estimatedSize > 0) {
+        sessionIds.reserve(estimatedSize);
+        startTimes.reserve(estimatedSize);
+        durations.reserve(estimatedSize);
+        attackerIps.reserve(estimatedSize);
+        ppsMaxs.reserve(estimatedSize);
+        typeLabels.reserve(estimatedSize);
+        confidences.reserve(estimatedSize);
+    }
+
     int count = 0;
 
     while (securityEventQueue_.try_dequeue(entry)) {
