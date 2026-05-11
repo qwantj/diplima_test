@@ -9,6 +9,7 @@ target_link_libraries(db_benchmark PRIVATE ddos_core Qt6::Core Qt6::Sql)
 add_executable(ddos_unit_tests
     unit/main.cpp
     unit/ProtocolTests.cpp
+    unit/CSVUtilsTests.cpp
 )
 
 target_link_libraries(ddos_unit_tests PRIVATE

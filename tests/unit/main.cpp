@@ -3,6 +3,7 @@
 
 #include "test_ConfigManager.hpp"
 #include "test_Protocol.hpp"
+#include "CSVUtilsTests.hpp"
 
 int main(int argc, char *argv[])
 {
@@ -15,6 +16,9 @@ int main(int argc, char *argv[])
 
     TestProtocol protocolTest;
     status |= QTest::qExec(&protocolTest, argc, argv);
+
+    CSVUtilsTests csvTest;
+    status |= QTest::qExec(&csvTest, argc, argv);
 
     return status;
 }
