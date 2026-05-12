@@ -25,7 +25,8 @@ private slots:
         QCOMPARE(QString::fromStdString(loadedConfig.dbHost), QString("test_host"));
         QCOMPARE(loadedConfig.dbPort, 1234);
         QCOMPARE(QString::fromStdString(loadedConfig.dbUser), QString("test_user"));
-        QCOMPARE(QString::fromStdString(loadedConfig.dbPass), QString("test_pass"));
+        // Password should NOT be persisted and thus should be empty when loaded back
+        QCOMPARE(QString::fromStdString(loadedConfig.dbPass), QString(""));
     }
 
     void testEnvOverride() {

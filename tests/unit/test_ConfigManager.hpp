@@ -8,4 +8,5 @@ private slots:
     void testLoadMissingFile();
     void testLoadInvalidJson();
     void testLoadPartialJson();
+    void testSaveDoesNotPersistPassword();
 };

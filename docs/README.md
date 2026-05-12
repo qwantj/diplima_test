@@ -224,7 +224,7 @@ python c:\Dev\CXX\diploma_test\scripts\ddos_test.py --duration 10
 
 - --db-user <user> (по умолчанию: postgres)
 
-- --db-password <pass> (по умолчанию: qwerty)
+- --db-password <pass> (по умолчанию: пустая строка, рекомендуется использовать переменную окружения DDOS_DB_PASS)
 
 - --pcap-dir <dir> (опционально: сохранять размеченные дампы)
 
