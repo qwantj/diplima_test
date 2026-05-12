@@ -21,3 +21,10 @@ std::shared_ptr<spdlog::logger>& AppLogger::get() {
     if (!logger_) init();
     return logger_;
 }
+
+void AppLogger::reset() {
+    if (logger_) {
+        spdlog::drop("ddos");
+        logger_.reset();
+    }
+}

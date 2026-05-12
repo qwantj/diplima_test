@@ -23,6 +23,8 @@ add_executable(ddos_unit_tests
     unit/test_FileBuffer.cpp
     unit/test_ModelInferencer.hpp
     unit/test_ModelInferencer.cpp
+    unit/AppLoggerTests.hpp
+    unit/AppLoggerTests.cpp
 )
 
 target_link_libraries(ddos_unit_tests PRIVATE
