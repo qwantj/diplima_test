@@ -110,4 +110,24 @@ void TestConfigManager::testPartialJson() {
     QCOMPARE(config.tcpPort, defaultPort); // Не было в JSON, должно остаться дефолтным
 }
 
+void TestConfigManager::testSaveDoesNotPersistPassword() {
+    QTemporaryFile tempFile;
+    QVERIFY(tempFile.open());
+    QString filePath = tempFile.fileName();
+    tempFile.close();
+
+    AppConfig config;
+    config.dbPass = "secret_password";
+    config.dbUser = "test_user";
+
+    QVERIFY(ConfigManager::save(filePath.toStdString(), config));
+
+    AppConfig loadedConfig;
+    QVERIFY(ConfigManager::load(filePath.toStdString(), loadedConfig));
+
+    QCOMPARE(QString::fromStdString(loadedConfig.dbUser), QString("test_user"));
+    // Password should NOT be persisted and thus should be empty when loaded back
+    QCOMPARE(QString::fromStdString(loadedConfig.dbPass), QString(""));
+}
+
 QTEST_APPLESS_MAIN(TestConfigManager)

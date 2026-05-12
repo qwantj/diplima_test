@@ -144,3 +144,29 @@ void TestConfigManager::testLoadPartialJson() {
         QCOMPARE(QString::fromStdString(config.collectorHost), QString("custom_host"));
         QCOMPARE(QString::fromStdString(config.dbHost), QString("localhost"));
 }
+
+void TestConfigManager::testSaveDoesNotPersistPassword() {
+    QString filePath;
+    {
+        QTemporaryFile tempFile;
+        tempFile.setAutoRemove(false);
+        QVERIFY(tempFile.open());
+        filePath = tempFile.fileName();
+        tempFile.close();
+    }
+
+    AppConfig config;
+    config.dbPass = "secret_password";
+    config.dbUser = "test_user";
+
+    QVERIFY(ConfigManager::save(filePath.toStdString(), config));
+
+    AppConfig loadedConfig;
+    QVERIFY(ConfigManager::load(filePath.toStdString(), loadedConfig));
+
+    QFile::remove(filePath);
+
+    QCOMPARE(QString::fromStdString(loadedConfig.dbUser), QString("test_user"));
+    // Password should NOT be persisted and thus should be empty when loaded back
+    QCOMPARE(QString::fromStdString(loadedConfig.dbPass), QString(""));
+}

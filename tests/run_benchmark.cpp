@@ -14,7 +14,10 @@ int main(int argc, char* argv[]) {
     AppLogger::init();
 
     DatabaseManager db;
-    bool ok = db.connectToDatabase("localhost", 5432, "ddos_detection_db", "postgres", "qwerty");
+    const char* envPass = std::getenv("DDOS_DB_PASS");
+    std::string dbPass = envPass ? envPass : "";
+
+    bool ok = db.connectToDatabase("localhost", 5432, "ddos_detection_db", "postgres", QString::fromStdString(dbPass));
     if (!ok) {
         std::cerr << "Failed to connect to database. Make sure postgres is running." << std::endl;
         return 1;

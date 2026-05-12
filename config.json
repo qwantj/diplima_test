@@ -6,7 +6,7 @@
         "port": 5432,
         "name": "ddos_detection_db",
         "user": "postgres",
-        "password": "qwerty"
+        "password": ""
     },
     "ml": {
         "default_model": "models/rf_model.onnx",
