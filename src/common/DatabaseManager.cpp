@@ -116,17 +116,31 @@ void DatabaseManager::ensureTables() {
 
 int DatabaseManager::createSession(const QString& iface, const QString& modelName) {
     QMutexLocker lock(&dbMutex_);
+    if (!db_.isOpen()) {
+        AppLogger::get()->error("DatabaseManager: cannot create session, DB not open");
+        return -1;
+    }
+
     QSqlQuery q(db_);
-    q.prepare("INSERT INTO sessions (interface_name, model_name) VALUES (?, ?) RETURNING id");
+    q.prepare("INSERT INTO sessions (interface_name, model_name, start_time) VALUES (?, ?, NOW()) RETURNING id");
     q.addBindValue(iface);
     q.addBindValue(modelName);
-    if (q.exec() && q.next())
-        return q.value(0).toInt();
+    
+    if (q.exec()) {
+        if (q.next()) {
+            int id = q.value(0).toInt();
+            AppLogger::get()->info("DatabaseManager: created new session ID: {}", id);
+            return id;
+        }
+    }
+    
+    AppLogger::get()->error("DatabaseManager: failed to create session: {}", q.lastError().text().toStdString());
     return -1;
 }
 
 void DatabaseManager::closeSession(int sessionId, uint64_t totalPkts, uint64_t attacks, uint64_t benign) {
     QMutexLocker lock(&dbMutex_);
+    if (sessionId <= 0) return;
     QSqlQuery q(db_);
     q.prepare("UPDATE sessions SET end_time=NOW(), total_packets=?, total_attacks=?, total_benign=? WHERE id=?");
     q.addBindValue((qint64)totalPkts);
@@ -139,6 +153,8 @@ void DatabaseManager::closeSession(int sessionId, uint64_t totalPkts, uint64_t a
 std::vector<SessionInfo> DatabaseManager::getSessions() {
     QMutexLocker lock(&dbMutex_);
     std::vector<SessionInfo> result;
+    if (!db_.isOpen()) return result;
+
     QSqlQuery q(db_);
     q.exec("SELECT id, interface_name, model_name, start_time, end_time, total_packets, total_attacks, total_benign FROM sessions ORDER BY id DESC LIMIT 100");
     while (q.next()) {
@@ -173,6 +189,8 @@ void DatabaseManager::enqueueSecurityEvent(int sessionId, const QDateTime& start
 std::vector<DetectionResult> DatabaseManager::getEventsForSession(int sessionId) {
     QMutexLocker lock(&dbMutex_);
     std::vector<DetectionResult> result;
+    if (!db_.isOpen()) return result;
+
     QSqlQuery q(db_);
     q.prepare("SELECT timestamp, label, confidence, pps, total_packets, features, model_name FROM events WHERE session_id=? ORDER BY timestamp");
     q.addBindValue(sessionId);
@@ -200,6 +218,8 @@ std::vector<DetectionResult> DatabaseManager::getEventsForSession(int sessionId)
 std::vector<DetectionResult> DatabaseManager::getSecurityEvents(int limit) {
     QMutexLocker lock(&dbMutex_);
     std::vector<DetectionResult> result;
+    if (!db_.isOpen()) return result;
+
     QSqlQuery q(db_);
     q.prepare("SELECT start_time, type_label, confidence, pps_max, attacker_ip, session_id FROM security_events ORDER BY start_time DESC LIMIT ?");
     q.addBindValue(limit);
@@ -217,15 +237,14 @@ std::vector<DetectionResult> DatabaseManager::getSecurityEvents(int limit) {
 }
 
 void DatabaseManager::startAsyncWriter() {
-    AppLogger::get()->info("DatabaseManager: async writer started (flush every {} ms)", FLUSH_INTERVAL_MS);
+    AppLogger::get()->info("DatabaseManager: async writer started");
     writerThread_ = std::make_unique<QThread>();
     flushTimer_ = std::make_unique<QTimer>();
     flushTimer_->setInterval(FLUSH_INTERVAL_MS);
     flushTimer_->moveToThread(writerThread_.get());
 
     QString threadConnectionName = connectionName_ + "_writer";
-    connect(writerThread_.get(), &QThread::started, flushTimer_.get(),
-        qOverload<>(&QTimer::start));
+    connect(writerThread_.get(), &QThread::started, flushTimer_.get(), qOverload<>(&QTimer::start));
 
     connect(flushTimer_.get(), &QTimer::timeout, flushTimer_.get(), [this, threadConnectionName]() {
         if (!QSqlDatabase::contains(threadConnectionName)) {
@@ -236,7 +255,7 @@ void DatabaseManager::startAsyncWriter() {
             threadDb.setUserName(user_);
             threadDb.setPassword(password_);
             if (!threadDb.open()) {
-                AppLogger::get()->error("DatabaseManager writer thread connection error");
+                AppLogger::get()->error("DatabaseManager writer thread connection error: {}", threadDb.lastError().text().toStdString());
                 return;
             }
         }
@@ -260,9 +279,12 @@ void DatabaseManager::stopAsyncWriter() {
         writerThread_->quit();
         writerThread_->wait();
     }
-    flushEvents(db_);
-    flushSnapshots(db_);
-    flushSecurityEvents(db_);
+    // Final flush
+    if (db_.isOpen()) {
+        flushEvents(db_);
+        flushSnapshots(db_);
+        flushSecurityEvents(db_);
+    }
 
     QString threadConnectionName = connectionName_ + "_writer";
     if (QSqlDatabase::contains(threadConnectionName)) {
@@ -278,26 +300,17 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
 
     if (!db.isOpen()) return;
 
-    int count = 0;
-    int throttled = 0;
-    bool transactionActive = false;
-
-    QSqlQuery q(db);
-    q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
-              "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-
     // 1. Process pending events from disk buffer
     if (pendingEventsBuffer_.size() > 0) {
         auto bufferedMessages = pendingEventsBuffer_.readAllAndClear();
         if (!bufferedMessages.empty()) {
             QVariantList sessionIds, timestamps, labels, confidences, ppsValues, totalPackets, features, modelNames;
-            int bufferedCount = 0;
-
+            int count = 0;
             for (const auto& msg : bufferedMessages) {
                 try {
                     auto j = nlohmann::json::parse(msg.toStdString());
                     DetectionResult r = Protocol::deserializeResult(j);
-
+                    if (r.sessionId <= 0) continue;
                     sessionIds << r.sessionId;
                     timestamps << r.timestamp;
                     labels << r.label;
@@ -306,33 +319,15 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
                     totalPackets << static_cast<qint64>(r.totalPackets);
                     features << QString::fromStdString(nlohmann::json(r.features).dump());
                     modelNames << QString::fromStdString(r.modelName);
-                    bufferedCount++;
-                } catch (const std::exception& e) {
-                    AppLogger::get()->error("Failed to parse buffered offline event: {}", e.what());
-                }
+                    count++;
+                } catch (...) {}
             }
-
-            if (bufferedCount > 0) {
-                db.transaction();
+            if (count > 0 && db.transaction()) {
                 QSqlQuery q(db);
                 q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
-                q.bindValue(0, sessionIds);
-                q.bindValue(1, timestamps);
-                q.bindValue(2, labels);
-                q.bindValue(3, confidences);
-                q.bindValue(4, ppsValues);
-                q.bindValue(5, totalPackets);
-                q.bindValue(6, features);
-                q.bindValue(7, modelNames);
-
-                if (q.execBatch()) {
-                    db.commit();
-                    AppLogger::get()->info("DatabaseManager: restored and flushed {} buffered offline events.", bufferedCount);
-                } else {
-                    AppLogger::get()->error("DatabaseManager: failed to batch flush {} buffered events: {}", 
-                        bufferedCount, q.lastError().text().toStdString());
-                    db.rollback();
-                }
+                q.bindValue(0, sessionIds); q.bindValue(1, timestamps); q.bindValue(2, labels); q.bindValue(3, confidences);
+                q.bindValue(4, ppsValues); q.bindValue(5, totalPackets); q.bindValue(6, features); q.bindValue(7, modelNames);
+                if (q.execBatch()) db.commit(); else { db.rollback(); }
             }
         }
     }
@@ -340,207 +335,81 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
     // 2. Process live queue
     EventEntry entry;
     QVariantList sessionIds, timestamps, labels, confidences, ppsValues, totalPackets, features, modelNames;
-
-    // Optimization: pre-reserve memory to prevent re-allocations
-    int estimatedLiveSize = std::min(static_cast<int>(eventQueue_.size_approx()), MAX_EVENTS_PER_FLUSH);
-    if (estimatedLiveSize > 0) {
-        sessionIds.reserve(estimatedLiveSize);
-        timestamps.reserve(estimatedLiveSize);
-        labels.reserve(estimatedLiveSize);
-        confidences.reserve(estimatedLiveSize);
-        ppsValues.reserve(estimatedLiveSize);
-        totalPackets.reserve(estimatedLiveSize);
-        features.reserve(estimatedLiveSize);
-        modelNames.reserve(estimatedLiveSize);
-    }
-
     int liveCount = 0;
-
     while (eventQueue_.try_dequeue(entry)) {
-        if (!db.isOpen()) {
-            nlohmann::json j = Protocol::serializeResult(entry.result);
-            pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
-            continue;
-        }
-
-        if (liveCount >= MAX_EVENTS_PER_FLUSH) {
-            nlohmann::json j = Protocol::serializeResult(entry.result);
-            pendingEventsBuffer_.push(QByteArray::fromStdString(j.dump()));
-            throttled++;
-            continue;
-        }
-
+        if (entry.result.sessionId <= 0) continue;
         sessionIds << entry.result.sessionId;
         timestamps << entry.result.timestamp;
         labels << entry.result.label;
         confidences << entry.result.confidence;
         ppsValues << entry.result.pps;
         totalPackets << static_cast<qint64>(entry.result.totalPackets);
-
-        nlohmann::json featJson = entry.result.features;
-        features << QString::fromStdString(featJson.dump());
+        features << QString::fromStdString(nlohmann::json(entry.result.features).dump());
         modelNames << QString::fromStdString(entry.result.modelName);
         liveCount++;
+        if (liveCount >= MAX_EVENTS_PER_FLUSH) break;
     }
 
     if (liveCount > 0) {
-        db.transaction();
-        QSqlQuery q(db);
-        q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)");
-        q.bindValue(0, sessionIds);
-        q.bindValue(1, timestamps);
-        q.bindValue(2, labels);
-        q.bindValue(3, confidences);
-        q.bindValue(4, ppsValues);
-        q.bindValue(5, totalPackets);
-        q.bindValue(6, features);
-        q.bindValue(7, modelNames);
-
-        if (q.execBatch()) {
-            db.commit();
-        } else {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} live events: {}", 
-                liveCount, q.lastError().text().toStdString());
-            db.rollback();
+        if (db.transaction()) {
+            QSqlQuery q(db);
+            if (q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) VALUES (?,?,?,?,?,?,?,?)")) {
+                q.bindValue(0, sessionIds); q.bindValue(1, timestamps); q.bindValue(2, labels); q.bindValue(3, confidences);
+                q.bindValue(4, ppsValues); q.bindValue(5, totalPackets); q.bindValue(6, features); q.bindValue(7, modelNames);
+                if (q.execBatch()) {
+                    db.commit();
+                } else {
+                    AppLogger::get()->error("DatabaseManager: events batch failed: {}", q.lastError().text().toStdString());
+                    db.rollback();
+                }
+            } else {
+                db.rollback();
+            }
         }
-    }
-
-    if (throttled > 0) {
-        AppLogger::get()->warn("DatabaseManager: throttled {} events.", throttled);
     }
 }
 
-
 void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     std::optional<QMutexLocker<QMutex>> lock;
-    if (db.connectionName() == connectionName_) {
-        lock.emplace(&dbMutex_);
-    }
-
+    if (db.connectionName() == connectionName_) lock.emplace(&dbMutex_);
     if (!db.isOpen()) return;
 
     SnapshotEntry entry;
     QVariantList sessionIds, timestamps, ppsValues, totalPackets, labels;
-
-    // Optimization: pre-reserve memory to prevent re-allocations
-    int estimatedSize = std::min(static_cast<int>(snapshotQueue_.size_approx()), MAX_EVENTS_PER_FLUSH);
-    if (estimatedSize > 0) {
-        sessionIds.reserve(estimatedSize);
-        timestamps.reserve(estimatedSize);
-        ppsValues.reserve(estimatedSize);
-        totalPackets.reserve(estimatedSize);
-        labels.reserve(estimatedSize);
-    }
-
     int count = 0;
-    int throttled = 0;
-
     while (snapshotQueue_.try_dequeue(entry)) {
-        if (!db.isOpen()) {
-<<<<<<< HEAD
-            // Note: Snapshots are transient, we don't buffer them to disk for now
-            // but we stop processing to avoid queue depletion without storage
-            throttled++;
-            continue; 
-        }
-
-        if (count >= MAX_EVENTS_PER_FLUSH) {
-            throttled++;
-            continue;
-=======
-            // Re-enqueue if DB disconnects during queue processing
-            snapshotQueue_.enqueue(entry);
-            break;
-        }
-
-        if (count >= MAX_EVENTS_PER_FLUSH) {
-            // Put it back in the queue for the next flush cycle
-            snapshotQueue_.enqueue(entry);
-            throttled = snapshotQueue_.size_approx() + 1;
-            break;
->>>>>>> 836a9a39216d9d0be70b124c8ab6d1e5025eb704
-        }
-
+        if (entry.sessionId <= 0) continue;
         sessionIds << entry.sessionId;
         timestamps << entry.timestamp;
         ppsValues << entry.pps;
         totalPackets << static_cast<qint64>(entry.totalPackets);
         labels << entry.currentLabel;
         count++;
+        if (count >= MAX_EVENTS_PER_FLUSH) break;
     }
 
-    if (count > 0) {
-        db.transaction();
+    if (count > 0 && db.transaction()) {
         QSqlQuery q(db);
-        q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
-        q.bindValue(0, sessionIds);
-        q.bindValue(1, timestamps);
-        q.bindValue(2, ppsValues);
-        q.bindValue(3, totalPackets);
-        q.bindValue(4, labels);
-
-        if (!q.execBatch()) {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} snapshots: {}", 
-                count, q.lastError().text().toStdString());
-            db.rollback();
-        } else {
-            db.commit();
-            // Reduced verbosity: only log info if significant number of snapshots or in debug
-            if (count > 10) {
-                AppLogger::get()->info("DatabaseManager: flushed {} stats snapshots.", count);
+        if (q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)")) {
+            q.bindValue(0, sessionIds); q.bindValue(1, timestamps); q.bindValue(2, ppsValues); q.bindValue(3, totalPackets); q.bindValue(4, labels);
+            if (q.execBatch()) db.commit(); else { 
+                AppLogger::get()->error("DatabaseManager: snapshots batch failed: {}", q.lastError().text().toStdString());
+                db.rollback(); 
             }
-        }
-    }
-
-    if (throttled > 0) {
-<<<<<<< HEAD
-        AppLogger::get()->warn("DatabaseManager: throttled/skipped {} snapshots (DB closed or limit reached).", throttled);
-=======
-        AppLogger::get()->warn("DatabaseManager: throttled {} snapshots.", throttled);
->>>>>>> 836a9a39216d9d0be70b124c8ab6d1e5025eb704
+        } else { db.rollback(); }
     }
 }
 
 void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     std::optional<QMutexLocker<QMutex>> lock;
-    if (db.connectionName() == connectionName_) {
-        lock.emplace(&dbMutex_);
-    }
-
+    if (db.connectionName() == connectionName_) lock.emplace(&dbMutex_);
     if (!db.isOpen()) return;
 
     SecurityEventEntry entry;
     QVariantList sessionIds, startTimes, durations, attackerIps, ppsMaxs, typeLabels, confidences;
-
-    // Optimization: pre-reserve memory to prevent re-allocations
-    int estimatedSize = std::min(static_cast<int>(securityEventQueue_.size_approx()), MAX_EVENTS_PER_FLUSH);
-    if (estimatedSize > 0) {
-        sessionIds.reserve(estimatedSize);
-        startTimes.reserve(estimatedSize);
-        durations.reserve(estimatedSize);
-        attackerIps.reserve(estimatedSize);
-        ppsMaxs.reserve(estimatedSize);
-        typeLabels.reserve(estimatedSize);
-        confidences.reserve(estimatedSize);
-    }
-
     int count = 0;
-    int throttled = 0;
-
     while (securityEventQueue_.try_dequeue(entry)) {
-        if (!db.isOpen()) {
-            // Re-enqueue if DB disconnects during queue processing
-            securityEventQueue_.enqueue(entry);
-            break;
-        }
-
-        if (count >= MAX_EVENTS_PER_FLUSH) {
-            // Put it back in the queue for the next flush cycle
-            securityEventQueue_.enqueue(entry);
-            throttled = securityEventQueue_.size_approx() + 1;
-            break;
-        }
-
+        if (entry.sessionId <= 0) continue;
         sessionIds << entry.sessionId;
         startTimes << entry.startTime;
         durations << entry.duration;
@@ -549,39 +418,18 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
         typeLabels << entry.typeLabel;
         confidences << entry.confidence;
         count++;
+        if (count >= MAX_EVENTS_PER_FLUSH) break;
     }
 
-    if (count > 0) {
-        db.transaction();
+    if (count > 0 && db.transaction()) {
         QSqlQuery q(db);
-        q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)");
-        q.bindValue(0, sessionIds);
-        q.bindValue(1, startTimes);
-        q.bindValue(2, durations);
-        q.bindValue(3, attackerIps);
-        q.bindValue(4, ppsMaxs);
-        q.bindValue(5, typeLabels);
-        q.bindValue(6, confidences);
-
-        if (!q.execBatch()) {
-            AppLogger::get()->error("DatabaseManager: failed to batch flush {} security events: {}", 
-                count, q.lastError().text().toStdString());
-            db.rollback();
-        } else {
-            db.commit();
-            AppLogger::get()->info("DatabaseManager: flushed {} security events.", count);
-        }
-    }
-
-    if (throttled > 0) {
-        AppLogger::get()->warn("DatabaseManager: throttled {} security events.", throttled);
-    }
-}
- {} security events.", count);
-        }
-    }
-
-    if (throttled > 0) {
-        AppLogger::get()->warn("DatabaseManager: throttled {} security events.", throttled);
+        if (q.prepare("INSERT INTO security_events (session_id, start_time, duration_sec, attacker_ip, pps_max, type_label, confidence) VALUES (?,?,?,?,?,?,?)")) {
+            q.bindValue(0, sessionIds); q.bindValue(1, startTimes); q.bindValue(2, durations); q.bindValue(3, attackerIps);
+            q.bindValue(4, ppsMaxs); q.bindValue(5, typeLabels); q.bindValue(6, confidences);
+            if (q.execBatch()) db.commit(); else { 
+                AppLogger::get()->error("DatabaseManager: security events batch failed: {}", q.lastError().text().toStdString());
+                db.rollback(); 
+            }
+        } else { db.rollback(); }
     }
 }

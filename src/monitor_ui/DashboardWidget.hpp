@@ -157,6 +157,7 @@ private:
     // Main PPS chart
     QChart* ppsChart_ = nullptr;
     QLineSeries* ppsSeries_ = nullptr;
+    QAreaSeries* ppsArea_ = nullptr;
     
     QLineSeries* zeroSeries_ = nullptr;
     QLineSeries* tcpUpper_ = nullptr;
@@ -167,13 +168,14 @@ private:
     QAreaSeries* icmpArea_ = nullptr;
     
     QLineSeries* otherSeries_ = nullptr;
-    QAreaSeries* attackConfidenceArea_ = nullptr;
+    QAreaSeries* otherArea_ = nullptr;
     QLineSeries* attackConfidenceUpper_ = nullptr;
     
     QDateTimeAxis* timeAxis_ = nullptr;
     QValueAxis* ppsAxis_ = nullptr;
     QValueAxis* confAxis_ = nullptr;
     InteractiveChartView* ppsChartView_ = nullptr;
+    QPushButton* resetBtn_ = nullptr;
 
     // Layer checkboxes
     QCheckBox* cbPps_ = nullptr;

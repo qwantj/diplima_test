@@ -346,6 +346,10 @@ void DashboardWidget::setupDashboard() {
     createLayerCb("TCP", ThemePalette::green(), cbTcp_);
     createLayerCb("Confidence %", ThemePalette::peach(), cbConf_);
     
+    resetBtn_ = new QPushButton("Reset Zoom");
+    resetBtn_->setStyleSheet(ThemePalette::buttonStyleSheet());
+    legendLayout->addWidget(resetBtn_);
+
     chartCardLayout->addLayout(legendLayout);
 
     ppsChart_ = new QChart();
@@ -354,48 +358,60 @@ void DashboardWidget::setupDashboard() {
     ppsChart_->legend()->hide();
     ppsChart_->setMargins(QMargins(0,0,0,0));
     
-    ppsSeries_ = new QLineSeries(); 
-    otherSeries_ = new QLineSeries();
-    
     zeroSeries_ = new QLineSeries();
+    
+    ppsSeries_ = new QLineSeries(); 
+    ppsArea_ = new QAreaSeries(ppsSeries_, zeroSeries_);
+    ppsArea_->setName("PPS"); ppsArea_->setColor(ThemePalette::sapphire()); ppsArea_->setOpacity(0.2);
+
+    otherSeries_ = new QLineSeries();
+    otherArea_ = new QAreaSeries(otherSeries_, zeroSeries_);
+    otherArea_->setName("Other"); otherArea_->setColor(ThemePalette::mauve()); otherArea_->setOpacity(0.3);
+    
     tcpUpper_ = new QLineSeries();   tcpArea_ = new QAreaSeries(tcpUpper_, zeroSeries_);
     udpUpper_ = new QLineSeries();   udpArea_ = new QAreaSeries(udpUpper_, tcpUpper_);
     icmpUpper_ = new QLineSeries();  icmpArea_ = new QAreaSeries(icmpUpper_, udpUpper_);
     
     attackConfidenceUpper_ = new QLineSeries();
-    attackConfidenceArea_ = new QAreaSeries(attackConfidenceUpper_, new QLineSeries());
+    attackConfidenceUpper_->setName("Attack Confidence");
+    QPen dashPen(ThemePalette::peach());
+    dashPen.setWidth(2);
+    dashPen.setStyle(Qt::DashLine);
+    attackConfidenceUpper_->setPen(dashPen);
     
-    // Z-Order: Area charts at the bottom, lines on top
-    ppsChart_->addSeries(attackConfidenceArea_);
+    // Z-Order: Areas at bottom, lines on top
+    ppsChart_->addSeries(ppsArea_);
+    ppsChart_->addSeries(otherArea_);
     ppsChart_->addSeries(tcpArea_);
     ppsChart_->addSeries(udpArea_);
     ppsChart_->addSeries(icmpArea_);
-    ppsChart_->addSeries(otherSeries_);
-    ppsChart_->addSeries(ppsSeries_);
+    ppsChart_->addSeries(attackConfidenceUpper_);
     
     timeAxis_ = new QDateTimeAxis(); timeAxis_->setFormat("HH:mm:ss");
     timeAxis_->setGridLineColor(ThemePalette::surface0()); timeAxis_->setLinePenColor(Qt::transparent);
     ppsChart_->addAxis(timeAxis_, Qt::AlignBottom);
     
     ppsAxis_ = new QValueAxis(); ppsAxis_->setGridLineColor(ThemePalette::surface0()); ppsAxis_->setLinePenColor(Qt::transparent);
+    ppsAxis_->setRange(0, 100);
     ppsChart_->addAxis(ppsAxis_, Qt::AlignLeft);
     
     confAxis_ = new QValueAxis(); confAxis_->setRange(0, 100); confAxis_->setGridLineVisible(false); confAxis_->setLinePenColor(Qt::transparent);
     ppsChart_->addAxis(confAxis_, Qt::AlignRight);
     
-    ppsSeries_->attachAxis(timeAxis_); ppsSeries_->attachAxis(ppsAxis_);
+    ppsArea_->attachAxis(timeAxis_); ppsArea_->attachAxis(ppsAxis_);
+    otherArea_->attachAxis(timeAxis_); otherArea_->attachAxis(ppsAxis_);
     tcpArea_->attachAxis(timeAxis_); tcpArea_->attachAxis(ppsAxis_);
     udpArea_->attachAxis(timeAxis_); udpArea_->attachAxis(ppsAxis_);
     icmpArea_->attachAxis(timeAxis_); icmpArea_->attachAxis(ppsAxis_);
-    otherSeries_->attachAxis(timeAxis_); otherSeries_->attachAxis(ppsAxis_);
-    attackConfidenceArea_->attachAxis(timeAxis_); attackConfidenceArea_->attachAxis(confAxis_);
+    attackConfidenceUpper_->attachAxis(timeAxis_); attackConfidenceUpper_->attachAxis(confAxis_);
     
-    connect(cbPps_, &QCheckBox::toggled, ppsSeries_, &QLineSeries::setVisible);
+    connect(cbPps_, &QCheckBox::toggled, ppsArea_, &QAreaSeries::setVisible);
     connect(cbTcp_, &QCheckBox::toggled, tcpArea_, &QAreaSeries::setVisible);
     connect(cbUdp_, &QCheckBox::toggled, udpArea_, &QAreaSeries::setVisible);
     connect(cbIcmp_, &QCheckBox::toggled, icmpArea_, &QAreaSeries::setVisible);
-    connect(cbOther_, &QCheckBox::toggled, otherSeries_, &QLineSeries::setVisible);
-    connect(cbConf_, &QCheckBox::toggled, attackConfidenceArea_, &QAreaSeries::setVisible);
+    connect(cbOther_, &QCheckBox::toggled, otherArea_, &QAreaSeries::setVisible);
+    connect(cbConf_, &QCheckBox::toggled, attackConfidenceUpper_, &QLineSeries::setVisible);
+    connect(resetBtn_, &QPushButton::clicked, this, &DashboardWidget::resetZoom);
     
     ppsChartView_ = new InteractiveChartView(ppsChart_, chartCard);
     ppsChartView_->setRenderHint(QPainter::Antialiasing);
@@ -525,23 +541,33 @@ void DashboardWidget::applyTheme(ThemeMode mode) {
     QColor tcpColor = ThemePalette::green();
     QColor udpColor = ThemePalette::yellow();
     QColor icmpColor = ThemePalette::red();
-    QColor otherColor = ThemePalette::subtext0();
-    
-    ppsSeries_->setPen(QPen(ppsColor, 2));
+    QColor otherColor = ThemePalette::mauve();
     
     auto styleArea = [](QAreaSeries* s, const QColor& c) {
-        QColor fill = c; fill.setAlpha(80); // Semi-transparent
+        if (!s) return;
+        QColor fill = c; fill.setAlpha(60); 
         s->setBrush(fill);
         s->setPen(QPen(c, 1));
     };
     
-    styleArea(tcpArea_, tcpColor);
-    styleArea(udpArea_, udpColor);
-    styleArea(icmpArea_, icmpColor);
-    otherSeries_->setPen(QPen(otherColor, 1.5));
+    // Find areas - they are not stored as members for all, so we cast if needed or just use members
+    // I added ppsArea, otherArea in setupDashboard local vars. 
+    // I should have made them members to style them easily.
+    // Let's find them in the chart series list.
+    for (auto* s : ppsChart_->series()) {
+        auto* area = qobject_cast<QAreaSeries*>(s);
+        if (!area) continue;
+        if (area->name() == "PPS") styleArea(area, ppsColor);
+        else if (area->name() == "TCP") styleArea(area, tcpColor);
+        else if (area->name() == "UDP") styleArea(area, udpColor);
+        else if (area->name() == "ICMP") styleArea(area, icmpColor);
+        else if (area->name() == "Other") styleArea(area, otherColor);
+    }
     
-    QColor attackColor = ThemePalette::peach(); attackColor.setAlpha(80);
-    attackConfidenceArea_->setBrush(attackColor); attackConfidenceArea_->setPen(QPen(ThemePalette::peach(), 1));
+    QPen dashPen(ThemePalette::peach());
+    dashPen.setWidth(2);
+    dashPen.setStyle(Qt::DashLine);
+    attackConfidenceUpper_->setPen(dashPen);
     
     timeAxis_->setLabelsColor(ThemePalette::textSecondary());
     ppsAxis_->setLabelsColor(ThemePalette::textSecondary());
@@ -586,7 +612,7 @@ void DashboardWidget::onChartHover(const QPoint& pos) {
     items.append({ThemePalette::green(), QString("TCP: %1 pps").arg(tcp, 0, 'f', 1)});
     items.append({ThemePalette::yellow(), QString("UDP: %1 pps").arg(udp, 0, 'f', 1)});
     items.append({ThemePalette::red(), QString("ICMP: %1 pps").arg(icmp, 0, 'f', 1)});
-    items.append({ThemePalette::subtext0(), QString("Other: %1 pps").arg(other, 0, 'f', 1)});
+    items.append({ThemePalette::mauve(), QString("Other: %1 pps").arg(other, 0, 'f', 1)});
     
     double conf = attackConfidenceUpper_->points()[idx].y();
     QString footer = QString("Attack Confidence: %1%").arg(conf, 0, 'f', 1);
@@ -610,12 +636,24 @@ void DashboardWidget::onChartLeave() {
 void DashboardWidget::addDataPoint(const DetectionResult& result) {
     QDateTime t = result.timestamp.isValid() ? result.timestamp : QDateTime::currentDateTime();
     qreal ms = t.toMSecsSinceEpoch();
+    
+    qint64 windowSizeMs = 120000; // 2 minute sliding window
+    
+    // Check if we need to initialize the time axis
+    if (timeHistory_.empty()) {
+        // Start range from current time to current time + window
+        // This ensures the first point is on the far LEFT.
+        timeAxis_->setRange(t, t.addMSecs(windowSizeMs));
+        bwTimeAxis_->setRange(t, t.addMSecs(windowSizeMs));
+    }
+
     ppsSeries_->append(ms, result.pps);
     double dt = result.flowDuration > 0 ? result.flowDuration : 1.0;
     
     double tcpVal = result.tcpPackets / dt;
     double udpVal = result.udpPackets / dt;
     double icmpVal = result.icmpPackets / dt;
+    double otherVal = result.otherPackets / dt;
     
     double base = 0;
     zeroSeries_->append(ms, base);
@@ -626,14 +664,12 @@ void DashboardWidget::addDataPoint(const DetectionResult& result) {
     base += icmpVal;
     icmpUpper_->append(ms, base);
     
-    otherSeries_->append(ms, result.otherPackets / dt);
-    
+    otherSeries_->append(ms, otherVal);
     attackConfidenceUpper_->append(ms, result.confidence * 100.0);
-    qobject_cast<QLineSeries*>(attackConfidenceArea_->lowerSeries())->append(ms, 0);
     bandwidthSeries_->append(ms, (result.totalBytes * 8.0) / 1000000.0 / dt);
     
     timeHistory_.push_back(t);
-    while (timeHistory_.size() > 300) {
+    while (timeHistory_.size() > MAX_CHART_POINTS) {
         ppsSeries_->remove(0); 
         zeroSeries_->remove(0);
         tcpUpper_->remove(0);
@@ -641,18 +677,45 @@ void DashboardWidget::addDataPoint(const DetectionResult& result) {
         icmpUpper_->remove(0);
         otherSeries_->remove(0); 
         attackConfidenceUpper_->remove(0);
-        qobject_cast<QLineSeries*>(attackConfidenceArea_->lowerSeries())->remove(0);
         bandwidthSeries_->remove(0); 
         timeHistory_.pop_front();
     }
     
     if (!userInteracting_ && !timeHistory_.empty()) {
-        auto first = timeHistory_.front(); auto last = timeHistory_.back();
-        timeAxis_->setRange(first, last.addSecs(2)); bwTimeAxis_->setRange(first, last.addSecs(2));
-        double maxPps = 10; for (auto& pt : ppsSeries_->points()) maxPps = std::max(maxPps, pt.y());
-        ppsAxis_->setRange(0, maxPps * 1.2);
-        double maxBw = 1; for (auto& pt : bandwidthSeries_->points()) maxBw = std::max(maxBw, pt.y());
-        bwAxis_->setRange(0, maxBw * 1.2);
+        qint64 firstMs = timeHistory_.front().toMSecsSinceEpoch();
+        qint64 lastMs = ms;
+        
+        // If we have less than a window of data, keep start at first point
+        // If we have more, scroll the window
+        qint64 startMs = firstMs;
+        qint64 endMs = firstMs + windowSizeMs;
+        
+        if (lastMs > endMs) {
+            endMs = lastMs;
+            startMs = endMs - windowSizeMs;
+        }
+        
+        timeAxis_->setRange(QDateTime::fromMSecsSinceEpoch(startMs), QDateTime::fromMSecsSinceEpoch(endMs));
+        bwTimeAxis_->setRange(QDateTime::fromMSecsSinceEpoch(startMs), QDateTime::fromMSecsSinceEpoch(endMs));
+
+        // Y Auto-scaling: Find max in visible range [startMs, endMs]
+        double maxVisiblePps = 10.0;
+        const auto& pts = ppsSeries_->points();
+        for (const auto& p : pts) {
+            if (p.x() >= (qreal)startMs && p.x() <= (qreal)endMs) {
+                maxVisiblePps = std::max(maxVisiblePps, p.y());
+            }
+        }
+        ppsAxis_->setRange(0, std::max(10.0, maxVisiblePps * 1.15));
+
+        double maxVisibleBw = 1.0;
+        const auto& bwPts = bandwidthSeries_->points();
+        for (const auto& p : bwPts) {
+            if (p.x() >= (qreal)startMs && p.x() <= (qreal)endMs) {
+                maxVisibleBw = std::max(maxVisibleBw, p.y());
+            }
+        }
+        bwAxis_->setRange(0, std::max(1.0, maxVisibleBw * 1.15));
     }
 }
 
@@ -680,7 +743,6 @@ void DashboardWidget::loadHistory(const std::vector<DetectionResult>& events) {
     icmpUpper_->clear();
     otherSeries_->clear(); 
     attackConfidenceUpper_->clear();
-    qobject_cast<QLineSeries*>(attackConfidenceArea_->lowerSeries())->clear();
     bandwidthSeries_->clear(); 
     timeHistory_.clear(); totalNormal_ = 0; totalAttack_ = 0;
     for (auto& e : events) { if(e.label == 1) totalAttack_++; else totalNormal_++; addDataPoint(e); }

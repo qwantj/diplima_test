@@ -199,8 +199,8 @@ void MainWindow::setupUI() {
     sessionWidget_ = new SessionWidget();
     eventHistoryWidget_ = new EventHistoryWidget();
 
-    stackedWidget_->addWidget(dashboardWidget_->getTabAnalytics());  // 0: Dashboard = Infrastructure Health
-    stackedWidget_->addWidget(dashboardWidget_);                     // 1: Deep Analytics = Overview (Global State)
+    stackedWidget_->addWidget(dashboardWidget_);                     // 0: Dashboard = Overview (Global State)
+    stackedWidget_->addWidget(dashboardWidget_->getTabAnalytics());  // 1: Deep Analytics = Infrastructure Health
     stackedWidget_->addWidget(logWidget_);
     stackedWidget_->addWidget(eventHistoryWidget_);
     stackedWidget_->addWidget(sessionWidget_);
