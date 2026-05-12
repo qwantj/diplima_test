@@ -45,11 +45,16 @@ bool ModelInferencer::loadModel(const std::string& modelPath, const std::string&
         outputNamePtrs_.clear();
 
         size_t numInputs = session_->GetInputCount();
+        inputNames_.reserve(numInputs);
+        inputNamePtrs_.reserve(numInputs);
         for (size_t i = 0; i < numInputs; i++) {
             auto name = session_->GetInputNameAllocated(i, allocator);
             inputNames_.push_back(name.get());
         }
+
         size_t numOutputs = session_->GetOutputCount();
+        outputNames_.reserve(numOutputs);
+        outputNamePtrs_.reserve(numOutputs);
         for (size_t i = 0; i < numOutputs; i++) {
             auto name = session_->GetOutputNameAllocated(i, allocator);
             outputNames_.push_back(name.get());
