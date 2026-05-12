@@ -76,7 +76,7 @@ bool ConfigManager::save(const std::string& path, const AppConfig& config) {
         {"port", config.dbPort},
         {"name", config.dbName},
         {"user", config.dbUser},
-        {"password", config.dbPass}
+        {"password", ""} // Do not persist password to file for security
     };
 
     j["ml"] = {
