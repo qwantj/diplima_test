@@ -14,20 +14,20 @@
 // ====== TimelineWidget ======
 TimelineWidget::TimelineWidget(QWidget* parent) : QWidget(parent) {
     setFixedHeight(70);
-    hourBuckets_.resize(48, 0);
+    hourBuckets_.resize(NUM_BUCKETS, BucketType::Empty);
 }
 
 void TimelineWidget::setEvents(const std::vector<DetectionResult>& events, const QDate& day) {
     day_ = day;
-    std::fill(hourBuckets_.begin(), hourBuckets_.end(), 0);
+    std::fill(hourBuckets_.begin(), hourBuckets_.end(), BucketType::Empty);
     for (const auto& e : events) {
         if (e.timestamp.date() != day) continue;
         int hour = e.timestamp.time().hour();
         int min = e.timestamp.time().minute();
         int idx = hour * 2 + (min / 30);
-        if (idx < 48) {
-            if (e.label == 1) hourBuckets_[idx] = 2; // Attack
-            else if (hourBuckets_[idx] == 0) hourBuckets_[idx] = 1; // Benign
+        if (idx < NUM_BUCKETS) {
+            if (e.label == 1) hourBuckets_[idx] = BucketType::Attack;
+            else if (hourBuckets_[idx] == BucketType::Empty) hourBuckets_[idx] = BucketType::Benign;
         }
     }
     update();
@@ -42,14 +42,14 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
     p.setPen(QPen(QColor(49, 50, 68), 1));
     p.drawRoundedRect(rect().adjusted(1, 1, -1, -25), 6, 6);
 
-    int w = (width() - 15) / 48;
+    int w = (width() - 15) / NUM_BUCKETS;
     int h = height() - 35;
 
-    for (int i = 0; i < 48; i++) {
+    for (int i = 0; i < NUM_BUCKETS; i++) {
         QRect r(8 + i * w, 6, w - 2, h);
         QColor color = QColor(49, 50, 68); // Base / Empty
-        if (hourBuckets_[i] == 1) color = ThemePalette::success(); // Benign
-        else if (hourBuckets_[i] == 2) color = ThemePalette::danger(); // Attack
+        if (hourBuckets_[i] == BucketType::Benign) color = ThemePalette::success();
+        else if (hourBuckets_[i] == BucketType::Attack) color = ThemePalette::danger();
         
         p.setBrush(color);
         p.setPen(Qt::NoPen);
