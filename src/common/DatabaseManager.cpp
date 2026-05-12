@@ -417,6 +417,8 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
         lock.emplace(&dbMutex_);
     }
 
+    if (!db.isOpen()) return;
+
     SnapshotEntry entry;
     QVariantList sessionIds, timestamps, ppsValues, totalPackets, labels;
 
@@ -435,6 +437,7 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
 
     while (snapshotQueue_.try_dequeue(entry)) {
         if (!db.isOpen()) {
+<<<<<<< HEAD
             // Note: Snapshots are transient, we don't buffer them to disk for now
             // but we stop processing to avoid queue depletion without storage
             throttled++;
@@ -444,6 +447,18 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
         if (count >= MAX_EVENTS_PER_FLUSH) {
             throttled++;
             continue;
+=======
+            // Re-enqueue if DB disconnects during queue processing
+            snapshotQueue_.enqueue(entry);
+            break;
+        }
+
+        if (count >= MAX_EVENTS_PER_FLUSH) {
+            // Put it back in the queue for the next flush cycle
+            snapshotQueue_.enqueue(entry);
+            throttled = snapshotQueue_.size_approx() + 1;
+            break;
+>>>>>>> 836a9a39216d9d0be70b124c8ab6d1e5025eb704
         }
 
         sessionIds << entry.sessionId;
@@ -478,7 +493,11 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     }
 
     if (throttled > 0) {
+<<<<<<< HEAD
         AppLogger::get()->warn("DatabaseManager: throttled/skipped {} snapshots (DB closed or limit reached).", throttled);
+=======
+        AppLogger::get()->warn("DatabaseManager: throttled {} snapshots.", throttled);
+>>>>>>> 836a9a39216d9d0be70b124c8ab6d1e5025eb704
     }
 }
 
@@ -487,6 +506,8 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     if (db.connectionName() == connectionName_) {
         lock.emplace(&dbMutex_);
     }
+
+    if (!db.isOpen()) return;
 
     SecurityEventEntry entry;
     QVariantList sessionIds, startTimes, durations, attackerIps, ppsMaxs, typeLabels, confidences;
@@ -508,15 +529,16 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
 
     while (securityEventQueue_.try_dequeue(entry)) {
         if (!db.isOpen()) {
-            // Note: For now we don't have an offline buffer for security events
-            // We just count them as throttled to signal the issue
-            throttled++;
-            continue;
+            // Re-enqueue if DB disconnects during queue processing
+            securityEventQueue_.enqueue(entry);
+            break;
         }
 
         if (count >= MAX_EVENTS_PER_FLUSH) {
-            throttled++;
-            continue;
+            // Put it back in the queue for the next flush cycle
+            securityEventQueue_.enqueue(entry);
+            throttled = securityEventQueue_.size_approx() + 1;
+            break;
         }
 
         sessionIds << entry.sessionId;
@@ -548,6 +570,14 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
         } else {
             db.commit();
             AppLogger::get()->info("DatabaseManager: flushed {} security events.", count);
+        }
+    }
+
+    if (throttled > 0) {
+        AppLogger::get()->warn("DatabaseManager: throttled {} security events.", throttled);
+    }
+}
+ {} security events.", count);
         }
     }
 
