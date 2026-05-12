@@ -6,6 +6,7 @@
 #include "test_FileBuffer.hpp"
 #include "CSVUtilsTests.hpp"
 #include "test_ModelInferencer.hpp"
+#include "AppLoggerTests.hpp"
 
 int main(int argc, char *argv[])
 {
@@ -24,6 +25,9 @@ int main(int argc, char *argv[])
 
     CSVUtilsTests csvTest;
     status |= QTest::qExec(&csvTest, argc, argv);
+
+    AppLoggerTests loggerTest;
+    status |= QTest::qExec(&loggerTest, argc, argv);
 
     TestModelInferencer modelTest;
     status |= QTest::qExec(&modelTest, argc, argv);

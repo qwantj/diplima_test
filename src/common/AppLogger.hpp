@@ -10,6 +10,7 @@ class AppLogger {
 public:
     static void init(const std::string& logFile = "ddos_monitor.log");
     static std::shared_ptr<spdlog::logger>& get();
+    static void reset();
 
 private:
     static std::shared_ptr<spdlog::logger> logger_;
