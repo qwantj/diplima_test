@@ -119,7 +119,7 @@ void MainWindow::setupUI() {
     // Green Header Bar
     auto* headerBar = new QWidget();
     headerBar->setFixedHeight(3);
-    headerBar->setStyleSheet("background: #66ff66;");
+    headerBar->setStyleSheet(QString("background: %1;").arg(ThemePalette::green().name()));
     mainLayout->addWidget(headerBar);
 
     auto* contentLayout = new QHBoxLayout();
@@ -130,21 +130,24 @@ void MainWindow::setupUI() {
     // Sidebar
     sidebarList_ = new QListWidget();
     sidebarList_->setFixedWidth(160);
-    sidebarList_->setStyleSheet(R"(
+    sidebarList_->setStyleSheet(QString(R"(
         QListWidget {
-            background: #1e1e1e; border: none; padding: 0px;
-            font-size: 13px; color: #bbbbbb; outline: none;
+            background: %1; border: none; padding: 0px;
+            font-size: 13px; color: %2; outline: none;
         }
         QListWidget::item {
             padding: 15px 18px; border-left: 4px solid transparent;
         }
         QListWidget::item:selected {
-            background: #333333; color: #66ff66; border-left: 4px solid #66ff66;
+            background: %3; color: %4; border-left: 4px solid %4;
         }
         QListWidget::item:hover:!selected {
-            background: #2a2a2a;
+            background: %5;
         }
-    )");
+    )")
+    .arg(ThemePalette::mantle().name(), ThemePalette::subtext0().name(),
+         ThemePalette::surface0().name(), ThemePalette::green().name(),
+         ThemePalette::base().name()));
 
     sidebarList_->setIconSize(QSize(22, 22));
 
@@ -180,24 +183,24 @@ void MainWindow::setupUI() {
         sidebarList_->addItem(item);
     };
 
-    addSidebarItem("Dashboard", QColor(100, 220, 100), 0);
-    addSidebarItem("Deep Analytics", QColor(100, 150, 255), 1);
-    addSidebarItem("Event Log", QColor(255, 180, 80), 2);
-    addSidebarItem("Incidents", QColor(100, 150, 255), 3);
-    addSidebarItem("Sessions", QColor(200, 100, 255), 4);
+    addSidebarItem("Dashboard", ThemePalette::green(), 0);
+    addSidebarItem("Deep Analytics", ThemePalette::blue(), 1);
+    addSidebarItem("Event Log (Live)", ThemePalette::peach(), 2);
+    addSidebarItem("Security Incidents", ThemePalette::blue(), 3);
+    addSidebarItem("Sessions History", ThemePalette::mauve(), 4);
     
     sidebarList_->setCurrentRow(0);
     contentLayout->addWidget(sidebarList_);
 
     stackedWidget_ = new QStackedWidget();
-    stackedWidget_->setStyleSheet("background: #181818;");
+    stackedWidget_->setStyleSheet(QString("background: %1;").arg(ThemePalette::crust().name()));
     dashboardWidget_ = new DashboardWidget();
     logWidget_ = new LogWidget();
     sessionWidget_ = new SessionWidget();
     eventHistoryWidget_ = new EventHistoryWidget();
 
-    stackedWidget_->addWidget(dashboardWidget_);
-    stackedWidget_->addWidget(dashboardWidget_->getTabAnalytics());
+    stackedWidget_->addWidget(dashboardWidget_->getTabAnalytics());  // 0: Dashboard = Infrastructure Health
+    stackedWidget_->addWidget(dashboardWidget_);                     // 1: Deep Analytics = Overview (Global State)
     stackedWidget_->addWidget(logWidget_);
     stackedWidget_->addWidget(eventHistoryWidget_);
     stackedWidget_->addWidget(sessionWidget_);
@@ -208,10 +211,12 @@ void MainWindow::setupUI() {
 
     auto* toolbar = addToolBar("Main");
     toolbar->setMovable(false);
-    toolbar->setStyleSheet("QToolBar { background: #222222; border-bottom: 1px solid #444444; padding: 8px; spacing: 12px; }");
+    toolbar->setStyleSheet(QString("QToolBar { background: %1; border-bottom: 1px solid %2; padding: 8px; spacing: 12px; }")
+        .arg(ThemePalette::mantle().name(), ThemePalette::surface0().name()));
 
-    auto* openPcapBtn = new QPushButton("📁 Open PCAP");
-    openPcapBtn->setStyleSheet("QPushButton { padding: 5px 12px; color: #ffcc66; font-weight: bold; background: #333333; border: 1px solid #444444; border-radius: 4px; } QPushButton:hover { background: #444444; }");
+    auto* openPcapBtn = new QPushButton("Открыть PCAP");
+    openPcapBtn->setStyleSheet(QString("QPushButton { padding: 5px 12px; color: %1; font-weight: bold; background: %2; border: 1px solid %3; border-radius: 4px; } QPushButton:hover { background: %3; }")
+        .arg(ThemePalette::yellow().name(), ThemePalette::surface0().name(), ThemePalette::surface1().name()));
     connect(openPcapBtn, &QPushButton::clicked, [this]() {
         QString path = QFileDialog::getOpenFileName(this, "Open PCAP", "", "PCAP files (*.pcap *.pcapng)");
         if (!path.isEmpty()) {
@@ -222,11 +227,12 @@ void MainWindow::setupUI() {
     toolbar->addWidget(openPcapBtn);
 
     auto* folderBtn = new QPushButton("📂");
-    folderBtn->setStyleSheet("QPushButton { padding: 5px 8px; color: #ffcc66; background: #333333; border: 1px solid #444444; border-radius: 4px; } QPushButton:hover { background: #444444; }");
+    folderBtn->setStyleSheet(QString("QPushButton { padding: 5px 8px; color: %1; background: %2; border: 1px solid %3; border-radius: 4px; } QPushButton:hover { background: %3; }")
+        .arg(ThemePalette::yellow().name(), ThemePalette::surface0().name(), ThemePalette::surface1().name()));
     toolbar->addWidget(folderBtn);
 
     toolbar->addSeparator();
-    auto* modelLbl = new QLabel(" Model: "); modelLbl->setStyleSheet("color: #999999; font-weight: bold;");
+    auto* modelLbl = new QLabel(" Model: "); modelLbl->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::overlay1().name()));
     toolbar->addWidget(modelLbl);
     
     auto* modelCombo = new QComboBox();
@@ -234,7 +240,8 @@ void MainWindow::setupUI() {
     QStringList modelFiles = modelsDir.entryList(QStringList() << "*.onnx", QDir::Files);
     if (modelFiles.isEmpty()) modelFiles << "rf_model.onnx" << "mlp_model.onnx";
     modelCombo->addItems(modelFiles);
-    modelCombo->setStyleSheet("QComboBox { color: #eeeeee; background: #333333; border: 1px solid #444444; border-radius: 4px; padding: 2px 12px; min-width: 150px; }");
+    modelCombo->setStyleSheet(QString("QComboBox { color: %1; background: %2; border: 1px solid %3; border-radius: 4px; padding: 2px 12px; min-width: 150px; }")
+        .arg(ThemePalette::text().name(), ThemePalette::surface0().name(), ThemePalette::surface1().name()));
     connect(modelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, modelCombo](int idx) {
         QString modelName = modelCombo->itemText(idx);
         nlohmann::json data; data["path"] = std::string("models/") + modelName.toStdString();
@@ -245,17 +252,21 @@ void MainWindow::setupUI() {
     toolbar->addSeparator();
     auto* liveIndicator = new QWidget(); auto* liveLayout = new QHBoxLayout(liveIndicator);
     liveLayout->setContentsMargins(0, 0, 0, 0); liveLayout->setSpacing(8);
-    auto* dot = new QLabel("●"); dot->setStyleSheet("color: #66ff66; font-size: 16px;");
-    auto* txt = new QLabel("Live"); txt->setStyleSheet("color: #eeeeee; font-weight: bold; font-size: 13px;");
+    auto* dot = new QLabel("●"); dot->setStyleSheet(QString("color: %1; font-size: 16px;").arg(ThemePalette::green().name()));
+    auto* txt = new QLabel("Live"); txt->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 13px;").arg(ThemePalette::text().name()));
     liveLayout->addWidget(dot); liveLayout->addWidget(txt);
     toolbar->addWidget(liveIndicator);
 
     auto* spacer = new QWidget(); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolbar->addWidget(spacer);
 
+    auto* themeLbl = new QLabel("Theme:");
+    themeLbl->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::overlay1().name()));
+    toolbar->addWidget(themeLbl);
     auto* themeCombo = new QComboBox();
-    themeCombo->addItems({"Dark Mode", "Light Mode"});
-    themeCombo->setStyleSheet("QComboBox { color: #eeeeee; background: #333333; border: 1px solid #444444; border-radius: 4px; padding: 2px 12px; }");
+    themeCombo->addItems({"Dark", "Light"});
+    themeCombo->setStyleSheet(QString("QComboBox { color: %1; background: %2; border: 1px solid %3; border-radius: 4px; padding: 2px 12px; }")
+        .arg(ThemePalette::text().name(), ThemePalette::surface0().name(), ThemePalette::surface1().name()));
     connect(themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         ThemeMode mode = idx == 0 ? ThemeMode::Dark : ThemeMode::Light;
         dashboardWidget_->applyTheme(mode);

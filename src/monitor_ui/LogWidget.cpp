@@ -1,4 +1,5 @@
 #include "monitor_ui/LogWidget.hpp"
+#include "monitor_ui/ThemePalette.hpp"
 #include <QHeaderView>
 #include <QLabel>
 #include <QHBoxLayout>
@@ -13,7 +14,8 @@ LogWidget::LogWidget(QWidget* parent) : QWidget(parent) {
     filterCombo_ = new QComboBox();
     filterCombo_->addItems({"All Events", "Benign Only", "Attack Only"});
     filterCombo_->setFixedWidth(140);
-    filterCombo_->setStyleSheet("QComboBox { background: #333333; color: #eeeeee; border: 1px solid #444444; border-radius: 4px; padding: 4px 8px; }");
+    filterCombo_->setStyleSheet(QString("QComboBox { background: %1; color: %2; border: 1px solid %3; border-radius: 4px; padding: 4px 8px; }")
+        .arg(ThemePalette::surface0().name(), ThemePalette::text().name(), ThemePalette::surface1().name()));
     filterLayout->addWidget(filterCombo_);
     filterLayout->addStretch();
     layout->addLayout(filterLayout);
@@ -27,33 +29,7 @@ LogWidget::LogWidget(QWidget* parent) : QWidget(parent) {
     table_->setShowGrid(false);
     table_->setAlternatingRowColors(true);
     table_->horizontalHeader()->setStretchLastSection(true);
-    table_->setStyleSheet(R"(
-        QTableWidget {
-            background-color: #1e1e2e;
-            alternate-background-color: #242437;
-            color: #cdd6f4;
-            gridline-color: transparent;
-            border: none;
-            font-size: 12px;
-        }
-        QHeaderView::section {
-            background-color: #181825;
-            color: #a6adc8;
-            font-weight: bold;
-            padding: 10px;
-            border: none;
-            text-transform: uppercase;
-            font-size: 11px;
-        }
-        QTableWidget::item {
-            padding: 8px;
-            border-bottom: 1px solid #313244;
-        }
-        QTableWidget::item:selected {
-            background-color: #45475a;
-            color: #f5e0dc;
-        }
-    )");
+    table_->setStyleSheet(ThemePalette::tableStyleSheet());
 
     table_->setColumnWidth(0, 130);
     table_->setColumnWidth(1, 200);
@@ -95,7 +71,7 @@ void LogWidget::appendRow(const DetectionResult& r) {
     table_->setItem(row, 0, new QTableWidgetItem(r.timestamp.toString("HH:mm:ss.zzz")));
     table_->setItem(row, 1, new QTableWidgetItem(r.uniqueSourceCount > 0 ? QString("Sources: %1").arg(r.uniqueSourceCount) : ""));
     auto* labelItem = new QTableWidgetItem(r.label == 0 ? "Benign" : "Attack");
-    labelItem->setForeground(r.label == 0 ? QColor(100, 220, 100) : QColor(255, 100, 100));
+    labelItem->setForeground(r.label == 0 ? ThemePalette::green() : ThemePalette::red());
     table_->setItem(row, 2, labelItem);
     table_->setItem(row, 3, new QTableWidgetItem(QString::number(r.confidence, 'f', 3)));
     table_->setItem(row, 4, new QTableWidgetItem(QString::number(r.pps, 'f', 1)));

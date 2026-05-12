@@ -64,8 +64,6 @@ private:
     void inferenceLoop();
     void processWindow();
     void updateIncidentState(const DetectionResult& result);
-    void blockIp(const std::string& ip);
-    void unblockAllIps();
 
     TrafficMonitor   monitor_;
     FeatureExtractor extractor_;
@@ -93,5 +91,4 @@ private:
     std::string attackType_;
     float maxConfidence_ = 0.0;
     std::map<std::string, uint64_t> attackSrcIps_;
-    std::set<std::string> activeBlockedIps_;
 };

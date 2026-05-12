@@ -34,6 +34,7 @@ public:
 private slots:
     void refreshData();
     void exportToCsv();
+    void exportToPdf();
     void applyFilter();
 
 private:
@@ -45,4 +46,5 @@ private:
     QLineEdit* ipFilter_ = nullptr;
     QPushButton* refreshBtn_ = nullptr;
     QPushButton* exportBtn_ = nullptr;
+    QPushButton* exportPdfBtn_ = nullptr;
 };

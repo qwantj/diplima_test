@@ -66,6 +66,7 @@ add_library(ddos_core STATIC
     src/network/PcapDumper.cpp
     src/ml/ModelInferencer.cpp
     src/core/DetectionEngine.cpp
+    src/core/FirewallManager.cpp
 )
 
 target_include_directories(ddos_core PUBLIC
@@ -132,8 +133,8 @@ add_executable(ddos_monitor
     src/monitor_ui/SessionWidget.cpp
     src/monitor_ui/EventHistoryWidget.cpp
     src/monitor_ui/ThemePalette.cpp
+    src/monitor_ui/ReportGenerator.cpp
 )
-
 target_link_libraries(ddos_monitor PRIVATE
     ddos_core
     Qt6::Widgets

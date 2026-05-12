@@ -110,6 +110,10 @@ DetectionResult deserializeResult(const nlohmann::json& j) {
         for (auto& t : tt)
             r.topTargets.emplace_back(t["target"].get<std::string>(), t["count"].get<uint64_t>());
     }
+    
+    if (j.contains("blocked_ips")) {
+        r.blockedIps = j["blocked_ips"].get<std::vector<std::string>>();
+    }
 
     return r;
 }

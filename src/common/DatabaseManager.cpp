@@ -412,16 +412,16 @@ void DatabaseManager::flushEvents(QSqlDatabase& db) {
 
 
 void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
-    std::unique_ptr<QMutexLocker<QMutex>> lock;
+    std::optional<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
-        lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
+        lock.emplace(&dbMutex_);
     }
 
     SnapshotEntry entry;
     QVariantList sessionIds, timestamps, ppsValues, totalPackets, labels;
 
     // Optimization: pre-reserve memory to prevent re-allocations
-    int estimatedSize = snapshotQueue_.size_approx();
+    int estimatedSize = std::min(static_cast<int>(snapshotQueue_.size_approx()), MAX_EVENTS_PER_FLUSH);
     if (estimatedSize > 0) {
         sessionIds.reserve(estimatedSize);
         timestamps.reserve(estimatedSize);
@@ -431,8 +431,21 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
     }
 
     int count = 0;
+    int throttled = 0;
 
     while (snapshotQueue_.try_dequeue(entry)) {
+        if (!db.isOpen()) {
+            // Note: Snapshots are transient, we don't buffer them to disk for now
+            // but we stop processing to avoid queue depletion without storage
+            throttled++;
+            continue; 
+        }
+
+        if (count >= MAX_EVENTS_PER_FLUSH) {
+            throttled++;
+            continue;
+        }
+
         sessionIds << entry.sessionId;
         timestamps << entry.timestamp;
         ppsValues << entry.pps;
@@ -457,22 +470,29 @@ void DatabaseManager::flushSnapshots(QSqlDatabase& db) {
             db.rollback();
         } else {
             db.commit();
-            AppLogger::get()->info("DatabaseManager: flushed {} stats snapshots.", count);
+            // Reduced verbosity: only log info if significant number of snapshots or in debug
+            if (count > 10) {
+                AppLogger::get()->info("DatabaseManager: flushed {} stats snapshots.", count);
+            }
         }
+    }
+
+    if (throttled > 0) {
+        AppLogger::get()->warn("DatabaseManager: throttled/skipped {} snapshots (DB closed or limit reached).", throttled);
     }
 }
 
 void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
-    std::unique_ptr<QMutexLocker<QMutex>> lock;
+    std::optional<QMutexLocker<QMutex>> lock;
     if (db.connectionName() == connectionName_) {
-        lock = std::make_unique<QMutexLocker<QMutex>>(&dbMutex_);
+        lock.emplace(&dbMutex_);
     }
 
     SecurityEventEntry entry;
     QVariantList sessionIds, startTimes, durations, attackerIps, ppsMaxs, typeLabels, confidences;
 
     // Optimization: pre-reserve memory to prevent re-allocations
-    int estimatedSize = securityEventQueue_.size_approx();
+    int estimatedSize = std::min(static_cast<int>(securityEventQueue_.size_approx()), MAX_EVENTS_PER_FLUSH);
     if (estimatedSize > 0) {
         sessionIds.reserve(estimatedSize);
         startTimes.reserve(estimatedSize);
@@ -484,8 +504,21 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
     }
 
     int count = 0;
+    int throttled = 0;
 
     while (securityEventQueue_.try_dequeue(entry)) {
+        if (!db.isOpen()) {
+            // Note: For now we don't have an offline buffer for security events
+            // We just count them as throttled to signal the issue
+            throttled++;
+            continue;
+        }
+
+        if (count >= MAX_EVENTS_PER_FLUSH) {
+            throttled++;
+            continue;
+        }
+
         sessionIds << entry.sessionId;
         startTimes << entry.startTime;
         durations << entry.duration;
@@ -516,5 +549,9 @@ void DatabaseManager::flushSecurityEvents(QSqlDatabase& db) {
             db.commit();
             AppLogger::get()->info("DatabaseManager: flushed {} security events.", count);
         }
+    }
+
+    if (throttled > 0) {
+        AppLogger::get()->warn("DatabaseManager: throttled {} security events.", throttled);
     }
 }

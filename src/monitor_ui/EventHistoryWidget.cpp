@@ -1,6 +1,7 @@
 #include "monitor_ui/EventHistoryWidget.hpp"
 #include "monitor_ui/ThemePalette.hpp"
 #include "common/CSVUtils.hpp"
+#include "monitor_ui/ReportGenerator.hpp"
 
 #include <QHeaderView>
 #include <QLabel>
@@ -8,6 +9,7 @@
 #include <QFileDialog>
 #include <QTextStream>
 #include <QPainterPath>
+#include <QMessageBox>
 
 // ====== TimelineWidget ======
 TimelineWidget::TimelineWidget(QWidget* parent) : QWidget(parent) {
@@ -70,40 +72,43 @@ EventHistoryWidget::EventHistoryWidget(QWidget* parent) : QWidget(parent) {
     auto* topRow = new QHBoxLayout();
     refreshBtn_ = new QPushButton("Refresh");
     exportBtn_ = new QPushButton("Export to CSV");
-    QString btnStyle = R"(
-        QPushButton { 
-            background: #313244; color: #cdd6f4; border: 1px solid #45475a; 
-            border-radius: 4px; padding: 8px 18px; font-weight: bold;
-        } 
-        QPushButton:hover { background: #45475a; }
-    )";
-    refreshBtn_->setStyleSheet(btnStyle); exportBtn_->setStyleSheet(btnStyle);
-    topRow->addWidget(refreshBtn_); topRow->addWidget(exportBtn_);
+    exportPdfBtn_ = new QPushButton("Generate PDF Report");
+    QString btnStyle = ThemePalette::buttonStyleSheet();
+    refreshBtn_->setStyleSheet(btnStyle); 
+    exportBtn_->setStyleSheet(btnStyle);
+    exportPdfBtn_->setStyleSheet(btnStyle);
+    
+    topRow->addWidget(refreshBtn_); 
+    topRow->addWidget(exportBtn_);
+    topRow->addWidget(exportPdfBtn_);
     topRow->addStretch();
     
     QLabel* dateLabel = new QLabel("Date:");
-    dateLabel->setStyleSheet("color: #a6adc8; font-weight: bold;");
+    dateLabel->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::subtext0().name()));
     topRow->addWidget(dateLabel);
     
     dateEdit_ = new QDateEdit(QDate::currentDate());
     dateEdit_->setCalendarPopup(true);
-    dateEdit_->setStyleSheet("QDateEdit { background: #313244; color: #cdd6f4; padding: 6px; border-radius: 4px; border: 1px solid #45475a; }");
+    dateEdit_->setStyleSheet(QString("QDateEdit { background: %1; color: %2; padding: 6px; border-radius: 4px; border: 1px solid %3; }")
+        .arg(ThemePalette::surface0().name(), ThemePalette::text().name(), ThemePalette::surface1().name()));
     topRow->addWidget(dateEdit_);
 
     filterType_ = new QComboBox();
     filterType_->addItems({"All Types", "DDoS Attack"});
-    filterType_->setStyleSheet("QComboBox { background: #313244; color: #cdd6f4; padding: 6px; border-radius: 4px; border: 1px solid #45475a; }");
+    filterType_->setStyleSheet(QString("QComboBox { background: %1; color: %2; padding: 6px; border-radius: 4px; border: 1px solid %3; }")
+        .arg(ThemePalette::surface0().name(), ThemePalette::text().name(), ThemePalette::surface1().name()));
     topRow->addWidget(filterType_);
 
     ipFilter_ = new QLineEdit();
     ipFilter_->setPlaceholderText("Filter by IP...");
-    ipFilter_->setStyleSheet("QLineEdit { background: #313244; color: #cdd6f4; padding: 6px; border-radius: 4px; border: 1px solid #45475a; }");
+    ipFilter_->setStyleSheet(QString("QLineEdit { background: %1; color: %2; padding: 6px; border-radius: 4px; border: 1px solid %3; }")
+        .arg(ThemePalette::surface0().name(), ThemePalette::text().name(), ThemePalette::surface1().name()));
     topRow->addWidget(ipFilter_);
     layout->addLayout(topRow);
 
     timeline_ = new TimelineWidget();
     QLabel* timelineLabel = new QLabel("Uptime / Threat Timeline (24h)");
-    timelineLabel->setStyleSheet("color: #cdd6f4; font-weight: bold; text-transform: uppercase; font-size: 11px;");
+    timelineLabel->setStyleSheet(QString("color: %1; font-weight: bold; text-transform: uppercase; font-size: 11px;").arg(ThemePalette::text().name()));
     layout->addWidget(timelineLabel);
     layout->addWidget(timeline_);
 
@@ -116,37 +121,12 @@ EventHistoryWidget::EventHistoryWidget(QWidget* parent) : QWidget(parent) {
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setShowGrid(false);
     table_->setAlternatingRowColors(true);
-    table_->setStyleSheet(R"(
-        QTableWidget {
-            background-color: #1e1e2e;
-            alternate-background-color: #242437;
-            color: #cdd6f4;
-            gridline-color: transparent;
-            border: 1px solid #313244;
-            border-radius: 8px;
-        }
-        QHeaderView::section {
-            background-color: #181825;
-            color: #a6adc8;
-            font-weight: bold;
-            padding: 10px;
-            border: none;
-            text-transform: uppercase;
-            font-size: 11px;
-        }
-        QTableWidget::item {
-            padding: 12px;
-            border-bottom: 1px solid #313244;
-        }
-        QTableWidget::item:selected {
-            background-color: #45475a;
-            color: #f5e0dc;
-        }
-    )");
+    table_->setStyleSheet(ThemePalette::tableStyleSheet());
     layout->addWidget(table_);
 
     connect(refreshBtn_, &QPushButton::clicked, this, &EventHistoryWidget::refreshData);
     connect(exportBtn_, &QPushButton::clicked, this, &EventHistoryWidget::exportToCsv);
+    connect(exportPdfBtn_, &QPushButton::clicked, this, &EventHistoryWidget::exportToPdf);
     connect(dateEdit_, &QDateEdit::dateChanged, this, &EventHistoryWidget::refreshData);
     connect(filterType_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &EventHistoryWidget::applyFilter);
     connect(ipFilter_, &QLineEdit::textChanged, this, &EventHistoryWidget::applyFilter);
@@ -181,6 +161,7 @@ void EventHistoryWidget::applyFilter() {
     for (int r = 0; r < table_->rowCount(); r++) {
         bool show = true;
         if (!ip.isEmpty() && !table_->item(r, 2)->text().contains(ip)) show = false;
+        // Adjust filter mapping based on your app's categories if needed
         if (typeIdx == 1 && table_->item(r, 4)->text() != "DDoS Attack") show = false;
         table_->setRowHidden(r, !show);
     }
@@ -201,4 +182,31 @@ void EventHistoryWidget::exportToCsv() {
         out << "\n";
     }
     f.close();
+}
+
+void EventHistoryWidget::exportToPdf() {
+    auto selectedItems = table_->selectedItems();
+    if (selectedItems.isEmpty()) {
+        QMessageBox::warning(this, "Export Error", "Please select an incident from the table to generate a report.");
+        return;
+    }
+
+    int row = selectedItems.first()->row();
+    IncidentReportData data;
+    data.startTime = table_->item(row, 0)->text();
+    data.duration = table_->item(row, 1)->text();
+    data.attackerIp = table_->item(row, 2)->text();
+    data.maxPps = table_->item(row, 3)->text();
+    data.type = table_->item(row, 4)->text();
+    data.confidence = table_->item(row, 5)->text();
+
+    QString defaultName = QString("Report_%1.pdf").arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+    QString path = QFileDialog::getSaveFileName(this, "Save PDF Report", defaultName, "PDF files (*.pdf)");
+    if (path.isEmpty()) return;
+
+    if (ReportGenerator::generatePdf(path, data)) {
+        QMessageBox::information(this, "Success", "PDF report generated successfully!");
+    } else {
+        QMessageBox::critical(this, "Error", "Failed to generate PDF report.");
+    }
 }

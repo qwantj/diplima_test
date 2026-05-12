@@ -41,6 +41,7 @@ struct DetectionResult {
     std::vector<std::pair<std::string, uint64_t>> topTargets;
     uint32_t uniqueSourceCount = 0;
     uint32_t activeFlowsCount = 0;
+    std::vector<std::string> blockedIps;
 
     int         sessionId = 0;
     std::string modelName;

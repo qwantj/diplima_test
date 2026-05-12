@@ -1,5 +1,6 @@
 #include "core/DetectionEngine.hpp"
 #include "common/AppLogger.hpp"
+#include "core/FirewallManager.hpp"
 
 #include <chrono>
 #include <QDateTime>
@@ -10,7 +11,7 @@ DetectionEngine::DetectionEngine() {}
 
 DetectionEngine::~DetectionEngine() {
     stop();
-    unblockAllIps();
+    FirewallManager::getInstance().clearAllRules();
 }
 
 bool DetectionEngine::init(const std::string& modelPath,
@@ -84,7 +85,7 @@ void DetectionEngine::stop() {
 void DetectionEngine::setMitigationEnabled(bool enabled) {
     isMitigationEnabled_ = enabled;
     if (!enabled) {
-        unblockAllIps();
+        FirewallManager::getInstance().unblockAllIps();
     }
 }
 
@@ -155,10 +156,11 @@ void DetectionEngine::processWindow() {
     result.timestamp = QDateTime::currentDateTime();
     result.modelName = inferencer_.modelName();
     extractor_.fillTelemetry(result);
-    
+
     // Fill monitor-specific metrics
     result.droppedPackets = monitor_.droppedPackets();
     result.queueSize = monitor_.queueSize();
+    result.blockedIps = FirewallManager::getInstance().getBlockedIps();
 
     // Skip inference if window has no packets
     if (result.totalPackets == 0) {
@@ -224,7 +226,7 @@ void DetectionEngine::updateIncidentState(const DetectionResult& result) {
             attackStartTime_.toString("HH:mm:ss").toStdString());
 
         if (isMitigationEnabled_ && !result.topTalkers.empty()) {
-            blockIp(result.topTalkers[0].first);
+            FirewallManager::getInstance().blockIp(result.topTalkers[0].first);
         }
     }
     else if (isUnderAttack_ && currentlyAttacking) {
@@ -236,7 +238,7 @@ void DetectionEngine::updateIncidentState(const DetectionResult& result) {
         }
 
         if (isMitigationEnabled_ && !result.topTalkers.empty()) {
-            blockIp(result.topTalkers[0].first);
+            FirewallManager::getInstance().blockIp(result.topTalkers[0].first);
         }
     }
     else if (isUnderAttack_ && !currentlyAttacking) {
@@ -264,47 +266,6 @@ void DetectionEngine::updateIncidentState(const DetectionResult& result) {
         
         // Unblock all IPs when attack ends (optional, usually WFP rules might expire or be manually managed, 
         // but for this prototype we clear them when the state returns to normal).
-        unblockAllIps();
+        FirewallManager::getInstance().unblockAllIps();
     }
-}
-
-void DetectionEngine::blockIp(const std::string& ip) {
-    if (activeBlockedIps_.count(ip)) return;
-
-#ifdef _WIN32
-    std::string ruleName = "DDoS_Block_" + ip;
-    std::string cmd = "netsh advfirewall firewall add rule name=\"" + ruleName + 
-                      "\" dir=in action=block remoteip=" + ip;
-    
-    AppLogger::get()->warn("Active Mitigation: Executing firewall block for IP {}", ip);
-    
-    // We execute this asynchronously so it doesn't block the inference loop
-    std::thread([cmd, ip, this]() {
-        int result = std::system(cmd.c_str());
-        if (result == 0) {
-            AppLogger::get()->info("Active Mitigation: Successfully blocked IP {}", ip);
-        } else {
-            AppLogger::get()->error("Active Mitigation: Failed to block IP {} (Are you running as Administrator?)", ip);
-        }
-    }).detach();
-    
-    activeBlockedIps_.insert(ip);
-#else
-    AppLogger::get()->warn("Active Mitigation: Blocking IP {} not implemented for non-Windows platforms", ip);
-#endif
-}
-
-void DetectionEngine::unblockAllIps() {
-#ifdef _WIN32
-    for (const auto& ip : activeBlockedIps_) {
-        std::string ruleName = "DDoS_Block_" + ip;
-        std::string cmd = "netsh advfirewall firewall delete rule name=\"" + ruleName + "\"";
-        
-        AppLogger::get()->info("Active Mitigation: Removing firewall block for IP {}", ip);
-        std::thread([cmd]() {
-            std::system(cmd.c_str());
-        }).detach();
-    }
-#endif
-    activeBlockedIps_.clear();
 }

@@ -262,67 +262,61 @@ void DashboardWidget::setupUI() {
 void DashboardWidget::setupDashboard() {
     tabSystem_ = new QWidget();
     auto* mainGridLayout = new QGridLayout(tabSystem_);
-    mainGridLayout->setContentsMargins(15, 15, 15, 15);
+    mainGridLayout->setContentsMargins(15, 5, 15, 15);
     mainGridLayout->setSpacing(15);
 
     // Helper to create a stylized card
     auto createCard = [](QWidget* parent = nullptr) {
         auto* card = new QFrame(parent);
-        card->setStyleSheet("QFrame { background: #1e1e2e; border: 1px solid #313244; border-radius: 8px; }");
+        card->setStyleSheet(ThemePalette::cardStyleSheet());
         return card;
     };
 
-    // 1. Overview Bar (Top Row)
-    auto* overviewCard = createCard();
-    auto* overviewLayout = new QHBoxLayout(overviewCard);
-    overviewLayout->setContentsMargins(20, 15, 20, 15);
-    overviewLayout->setSpacing(20);
-    
-    auto createStatPanel = [](const QString& title, const QString& initValue, const QString& valColor = "#cdd6f4") {
-        auto* panel = new QWidget();
-        auto* l = new QVBoxLayout(panel);
-        l->setContentsMargins(0, 0, 0, 0);
-        l->setSpacing(2);
-        
-        auto* tLbl = new QLabel(title);
-        tLbl->setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: bold; text-transform: uppercase; border: none; background: transparent;");
-        
-        auto* vLbl = new QLabel(initValue);
-        vLbl->setStyleSheet(QString("color: %1; font-size: 18px; font-weight: bold; border: none; background: transparent;").arg(valColor));
-        
-        l->addWidget(tLbl);
-        l->addWidget(vLbl);
-        return std::make_pair(panel, vLbl);
+    // Title label
+    auto* titleLabel = new QLabel("Overview (Global State)");
+    titleLabel->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: bold; background: transparent;").arg(ThemePalette::text().name()));
+    mainGridLayout->addWidget(titleLabel, 0, 0, 1, 3);
+
+    // 1. Overview Status Bar (single horizontal row)
+    auto* overviewBar = new QWidget();
+    overviewBar->setFixedHeight(32);
+    overviewBar->setStyleSheet("background: transparent;");
+    auto* overviewLayout = new QHBoxLayout(overviewBar);
+    overviewLayout->setContentsMargins(5, 0, 5, 0);
+    overviewLayout->setSpacing(15);
+
+    auto createStatusLabel = [](const QString& text, const QColor& color) {
+        auto* lbl = new QLabel(text);
+        lbl->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold; background: transparent;").arg(color.name()));
+        return lbl;
     };
 
-    auto [pColl, lColl] = createStatPanel("Collector", "Disconnected", "#f38ba8"); lblCollector_ = lColl;
-    auto [pPkts, lPkts] = createStatPanel("Total Packets", "0"); lblTotalPackets_ = lPkts;
-    auto [pPps, lPps]   = createStatPanel("Current PPS", "0.0"); lblPps_ = lPps;
-    auto [pDrop, lDrop] = createStatPanel("Drop Rate", "0.0 pps", "#fab387"); lblDropRate_ = lDrop;
-    auto [pSrc, lSrc]   = createStatPanel("Sources", "0"); lblSources_ = lSrc;
-    auto [pFlow, lFlow] = createStatPanel("Flows", "0"); lblFlows_ = lFlow;
+    lblCollector_ = createStatusLabel("Collector: Disconnected", ThemePalette::red());
+    lblTotalPackets_ = createStatusLabel("Total Packets: 0", ThemePalette::text());
+    lblPps_ = createStatusLabel("Current PPS: 0.0", ThemePalette::text());
+    lblDropRate_ = createStatusLabel("Drop Rate: 0.0 pps", ThemePalette::peach());
+    lblSources_ = createStatusLabel("Sources: 0", ThemePalette::text());
     
-    bpfCheckbox_ = new QCheckBox("Auto-Block Top-IP");
-    bpfCheckbox_->setStyleSheet("QCheckBox { color: #cdd6f4; font-size: 12px; font-weight: bold; border: none; background: transparent; }");
+    bpfCheckbox_ = new QCheckBox("Auto-Block Top-IP (Firewall)");
+    bpfCheckbox_->setStyleSheet(QString("QCheckBox { color: %1; font-size: 12px; font-weight: bold; background: transparent; }").arg(ThemePalette::text().name()));
     connect(bpfCheckbox_, &QCheckBox::toggled, this, &DashboardWidget::bpfToggled);
-    
-    auto [pMod, lMod]   = createStatPanel("Model", "None", "#f5c2e7"); lblModel_ = lMod;
-    auto [pProb, lProb] = createStatPanel("Attack Prob.", "0.0%", "#a6e3a1"); lblProbability_ = lProb;
-    auto [pStat, lStat] = createStatPanel("Status", "✔ Normal", "#a6e3a1"); lblStatus_ = lStat;
 
-    overviewLayout->addWidget(pColl);
-    overviewLayout->addWidget(pPkts);
-    overviewLayout->addWidget(pPps);
-    overviewLayout->addWidget(pDrop);
-    overviewLayout->addWidget(pSrc);
-    overviewLayout->addWidget(pFlow);
+    lblModel_ = createStatusLabel("\u25CF rf_model.onnx", ThemePalette::text());
+    lblProbability_ = createStatusLabel("Probability: 0.0%", ThemePalette::green());
+    lblStatus_ = createStatusLabel("\u2714 Normal Traffic", ThemePalette::green());
+
+    overviewLayout->addWidget(lblCollector_);
+    overviewLayout->addWidget(lblTotalPackets_);
+    overviewLayout->addWidget(lblPps_);
+    overviewLayout->addWidget(lblDropRate_);
+    overviewLayout->addWidget(lblSources_);
     overviewLayout->addWidget(bpfCheckbox_);
+    overviewLayout->addWidget(lblModel_);
     overviewLayout->addStretch();
-    overviewLayout->addWidget(pMod);
-    overviewLayout->addWidget(pProb);
-    overviewLayout->addWidget(pStat);
+    overviewLayout->addWidget(lblProbability_);
+    overviewLayout->addWidget(lblStatus_);
 
-    mainGridLayout->addWidget(overviewCard, 0, 0, 1, 3); // Spans across 3 columns
+    mainGridLayout->addWidget(overviewBar, 1, 0, 1, 3);
 
     // 2. Main Area Chart Card
     auto* chartCard = createCard();
@@ -335,7 +329,7 @@ void DashboardWidget::setupDashboard() {
     legendLayout->setSpacing(15);
     
     auto* chartTitle = new QLabel("Traffic Rate & Attack Confidence");
-    chartTitle->setStyleSheet("color: #cdd6f4; font-size: 14px; font-weight: bold; border: none; background: transparent;");
+    chartTitle->setStyleSheet(QString("color: %1; font-size: 14px; font-weight: bold; border: none; background: transparent;").arg(ThemePalette::text().name()));
     legendLayout->addWidget(chartTitle);
     legendLayout->addStretch();
 
@@ -345,12 +339,12 @@ void DashboardWidget::setupDashboard() {
         legendLayout->addWidget(cb);
     };
     
-    createLayerCb("PPS", QColor(116, 199, 236), cbPps_);
-    createLayerCb("Other", QColor(166, 173, 200), cbOther_);
-    createLayerCb("ICMP", QColor(243, 139, 168), cbIcmp_);
-    createLayerCb("UDP", QColor(249, 226, 175), cbUdp_);
-    createLayerCb("TCP", QColor(166, 227, 161), cbTcp_);
-    createLayerCb("Confidence %", QColor(250, 179, 135), cbConf_);
+    createLayerCb("PPS", ThemePalette::sapphire(), cbPps_);
+    createLayerCb("Other", ThemePalette::subtext0(), cbOther_);
+    createLayerCb("ICMP", ThemePalette::red(), cbIcmp_);
+    createLayerCb("UDP", ThemePalette::yellow(), cbUdp_);
+    createLayerCb("TCP", ThemePalette::green(), cbTcp_);
+    createLayerCb("Confidence %", ThemePalette::peach(), cbConf_);
     
     chartCardLayout->addLayout(legendLayout);
 
@@ -380,10 +374,10 @@ void DashboardWidget::setupDashboard() {
     ppsChart_->addSeries(ppsSeries_);
     
     timeAxis_ = new QDateTimeAxis(); timeAxis_->setFormat("HH:mm:ss");
-    timeAxis_->setGridLineColor(QColor(49, 50, 68)); timeAxis_->setLinePenColor(Qt::transparent);
+    timeAxis_->setGridLineColor(ThemePalette::surface0()); timeAxis_->setLinePenColor(Qt::transparent);
     ppsChart_->addAxis(timeAxis_, Qt::AlignBottom);
     
-    ppsAxis_ = new QValueAxis(); ppsAxis_->setGridLineColor(QColor(49, 50, 68)); ppsAxis_->setLinePenColor(Qt::transparent);
+    ppsAxis_ = new QValueAxis(); ppsAxis_->setGridLineColor(ThemePalette::surface0()); ppsAxis_->setLinePenColor(Qt::transparent);
     ppsChart_->addAxis(ppsAxis_, Qt::AlignLeft);
     
     confAxis_ = new QValueAxis(); confAxis_->setRange(0, 100); confAxis_->setGridLineVisible(false); confAxis_->setLinePenColor(Qt::transparent);
@@ -413,8 +407,8 @@ void DashboardWidget::setupDashboard() {
     chartTooltip_ = new SmartTooltip(ppsChartView_);
     
     chartCardLayout->addWidget(ppsChartView_, 1);
-    mainGridLayout->addWidget(chartCard, 1, 0, 1, 3); // Spans across 3 columns
-    mainGridLayout->setRowStretch(1, 3); // Give the chart more vertical space
+    mainGridLayout->addWidget(chartCard, 2, 0, 1, 3); // Spans across 3 columns
+    mainGridLayout->setRowStretch(2, 3); // Give the chart more vertical space
 
     // 3. Donuts Bottom (3 Columns)
     auto createDonutCard = [&](QChart*& chart, QPieSeries*& pie, DonutChartView*& view, QLabel*& titleLbl, const QString& titleText) {
@@ -424,12 +418,12 @@ void DashboardWidget::setupDashboard() {
         
         titleLbl = new QLabel(titleText);
         titleLbl->setAlignment(Qt::AlignLeft);
-        titleLbl->setStyleSheet("color: #cdd6f4; font-weight: bold; font-size: 14px; border: none; background: transparent;");
+        titleLbl->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 14px; border: none; background: transparent;").arg(ThemePalette::text().name()));
         l->addWidget(titleLbl);
         
         chart = new QChart(); chart->setAnimationOptions(QChart::NoAnimation);
         chart->setBackgroundBrush(Qt::transparent); chart->legend()->setAlignment(Qt::AlignRight);
-        chart->legend()->setLabelBrush(QBrush(QColor("#a6adc8"))); chart->setMargins(QMargins(0,0,0,0));
+        chart->legend()->setLabelBrush(QBrush(ThemePalette::subtext0())); chart->setMargins(QMargins(0,0,0,0));
         
         pie = new QPieSeries(); pie->setHoleSize(0.70); chart->addSeries(pie);
         
@@ -440,17 +434,17 @@ void DashboardWidget::setupDashboard() {
         return card;
     };
 
-    mainGridLayout->addWidget(createDonutCard(cpuChart_, cpuPie_, cpuView_, cpuTitle_, "CPU Usage"), 2, 0);
-    mainGridLayout->addWidget(createDonutCard(ramChart_, ramPie_, ramView_, ramTitle_, "RAM Usage"), 2, 1);
-    mainGridLayout->addWidget(createDonutCard(trafficChart_, trafficPie_, trafficView_, trafficTitle_, "Traffic Ratio"), 2, 2);
-    mainGridLayout->setRowStretch(2, 2);
+    mainGridLayout->addWidget(createDonutCard(cpuChart_, cpuPie_, cpuView_, cpuTitle_, "CPU Usage"), 3, 0);
+    mainGridLayout->addWidget(createDonutCard(ramChart_, ramPie_, ramView_, ramTitle_, "RAM Usage"), 3, 1);
+    mainGridLayout->addWidget(createDonutCard(trafficChart_, trafficPie_, trafficView_, trafficTitle_, "Traffic Ratio"), 3, 2);
+    mainGridLayout->setRowStretch(3, 2);
     
-    cpuPie_->append("In Use", 0)->setBrush(QColor("#f38ba8"));
-    cpuPie_->append("Free", 100)->setBrush(QColor("#a6e3a1"));
-    ramPie_->append("In Use", 0)->setBrush(QColor("#fab387"));
-    ramPie_->append("Free", 100)->setBrush(QColor("#a6e3a1"));
-    trafficPie_->append("Normal", 1)->setBrush(QColor("#a6e3a1"));
-    trafficPie_->append("Attack", 0)->setBrush(QColor("#f38ba8"));
+    cpuPie_->append("In Use", 0)->setBrush(ThemePalette::red());
+    cpuPie_->append("Free", 100)->setBrush(ThemePalette::green());
+    ramPie_->append("In Use", 0)->setBrush(ThemePalette::peach());
+    ramPie_->append("Free", 100)->setBrush(ThemePalette::green());
+    trafficPie_->append("Normal", 1)->setBrush(ThemePalette::green());
+    trafficPie_->append("Attack", 0)->setBrush(ThemePalette::red());
 
     applyTheme(ThemeMode::Dark);
 }
@@ -458,13 +452,19 @@ void DashboardWidget::setupDashboard() {
 void DashboardWidget::setupAnalytics() {
     tabAnalytics_ = new QWidget();
     auto* layout = new QVBoxLayout(tabAnalytics_);
+
+    // Title label
+    auto* titleLabel = new QLabel("Infrastructure Health");
+    titleLabel->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: bold; background: transparent; padding: 5px;").arg(ThemePalette::text().name()));
+    layout->addWidget(titleLabel);
+
     auto* topLayout = new QHBoxLayout();
     auto* healthGrp = new QGroupBox("Global SLO Health (Last points)");
-    healthGrp->setStyleSheet("color: #eeeeee; font-weight: bold;");
+    healthGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* hL = new QVBoxLayout(healthGrp); sloHealth_ = new AlertGridWidget(); hL->addWidget(sloHealth_);
     topLayout->addWidget(healthGrp, 1);
     auto* topGrp = new QGroupBox("Network Topology");
-    topGrp->setStyleSheet("color: #eeeeee; font-weight: bold;");
+    topGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* tL = new QVBoxLayout(topGrp); topologyWidget_ = new NetworkTopologyWidget(); tL->addWidget(topologyWidget_);
     topLayout->addWidget(topGrp, 2);
     layout->addLayout(topLayout, 1);
@@ -476,36 +476,7 @@ void DashboardWidget::setupAnalytics() {
         t->setEditTriggers(QAbstractItemView::NoEditTriggers); t->setSelectionBehavior(QAbstractItemView::SelectRows);
         t->setAlternatingRowColors(true);
         t->setShowGrid(false);
-        
-        QString qss = R"(
-            QTableWidget {
-                background-color: #1e1e2e;
-                alternate-background-color: #242437;
-                color: #cdd6f4;
-                gridline-color: transparent;
-                border: 1px solid #313244;
-                border-radius: 8px;
-                padding: 5px;
-            }
-            QHeaderView::section {
-                background-color: #181825;
-                color: #a6adc8;
-                font-weight: bold;
-                padding: 8px;
-                border: none;
-                text-transform: uppercase;
-                font-size: 10px;
-            }
-            QTableWidget::item {
-                padding: 10px;
-                border-bottom: 1px solid #313244;
-            }
-            QTableWidget::item:selected {
-                background-color: #45475a;
-                color: #f5e0dc;
-            }
-        )";
-        t->setStyleSheet(qss);
+        t->setStyleSheet(ThemePalette::tableStyleSheet());
         if (useProgress) t->setItemDelegate(new ProgressDelegate(t));
     };
 
@@ -513,31 +484,31 @@ void DashboardWidget::setupAnalytics() {
     setupTable(tableTargets_, {"#", "Target (IP:Port)", "Packets"}); midLayout->addWidget(tableTargets_, 1);
     
     auto* portsGrp = new QGroupBox("Top Active Ports");
-    portsGrp->setStyleSheet("color: #eeeeee; font-weight: bold;");
+    portsGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* pL = new QVBoxLayout(portsGrp);
     topPortsChart_ = new QChart(); topPortsChart_->setBackgroundBrush(Qt::transparent);
-    topPortsChart_->legend()->setAlignment(Qt::AlignBottom); topPortsChart_->legend()->setLabelBrush(QBrush(QColor(160, 160, 160)));
+    topPortsChart_->legend()->setAlignment(Qt::AlignBottom); topPortsChart_->legend()->setLabelBrush(QBrush(ThemePalette::subtext0()));
     topPortsPie_ = new QPieSeries(); topPortsPie_->setHoleSize(0.4); topPortsChart_->addSeries(topPortsPie_);
     auto* pv = new QChartView(topPortsChart_); pv->setRenderHint(QPainter::Antialiasing); pL->addWidget(pv);
     midLayout->addWidget(portsGrp, 1);
     layout->addLayout(midLayout, 2);
     auto* botLayout = new QHBoxLayout();
-    auto* bwGrp = new QGroupBox("Network Bandwidth"); bwGrp->setStyleSheet("color: #eeeeee; font-weight: bold;");
+    auto* bwGrp = new QGroupBox("Network Bandwidth"); bwGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* bL = new QVBoxLayout(bwGrp); bandwidthChart_ = new QChart(); bandwidthChart_->setBackgroundBrush(Qt::transparent);
-    bandwidthChart_->legend()->hide(); bandwidthSeries_ = new QLineSeries(); bandwidthSeries_->setPen(QPen(QColor(100, 200, 255), 2));
+    bandwidthChart_->legend()->hide(); bandwidthSeries_ = new QLineSeries(); bandwidthSeries_->setPen(QPen(ThemePalette::sapphire(), 2));
     bandwidthChart_->addSeries(bandwidthSeries_); bwTimeAxis_ = new QDateTimeAxis(); bwTimeAxis_->setFormat("HH:mm");
     bwAxis_ = new QValueAxis(); bwAxis_->setTitleText("Mbps");
     bandwidthChart_->addAxis(bwTimeAxis_, Qt::AlignBottom); bandwidthChart_->addAxis(bwAxis_, Qt::AlignLeft);
     bandwidthSeries_->attachAxis(bwTimeAxis_); bandwidthSeries_->attachAxis(bwAxis_);
     auto* bv = new QChartView(bandwidthChart_); bv->setRenderHint(QPainter::Antialiasing); bL->addWidget(bv);
     botLayout->addWidget(bwGrp, 1);
-    auto* hmGrp = new QGroupBox("Port Activity Heatmap"); hmGrp->setStyleSheet("color: #eeeeee; font-weight: bold;");
+    auto* hmGrp = new QGroupBox("Port Activity Heatmap"); hmGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* hmL = new QVBoxLayout(hmGrp); heatmapWidget_ = new HeatmapWidget(); hmL->addWidget(heatmapWidget_);
     botLayout->addWidget(hmGrp, 1);
-    auto* sizeGrp = new QGroupBox("Packet Size Distribution"); sizeGrp->setStyleSheet("color: #eeeeee; font-weight: bold;");
+    auto* sizeGrp = new QGroupBox("Packet Size Distribution"); sizeGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* sL = new QVBoxLayout(sizeGrp); packetSizeChart_ = new QChart(); packetSizeChart_->setBackgroundBrush(Qt::transparent);
     packetSizeChart_->legend()->hide(); packetSizeSeries_ = new QBarSeries(); packetSizeSet_ = new QBarSet("Count");
-    packetSizeSet_->setColor(QColor(100, 200, 255)); packetSizeSeries_->append(packetSizeSet_);
+    packetSizeSet_->setColor(ThemePalette::sapphire()); packetSizeSeries_->append(packetSizeSet_);
     packetSizeChart_->addSeries(packetSizeSeries_); sizeCatAxis_ = new QBarCategoryAxis();
     sizeCatAxis_->append({"0-64B", "65-128B", "129-512B", "513-1024B", ">1024B"}); sizeValAxis_ = new QValueAxis();
     packetSizeChart_->addAxis(sizeCatAxis_, Qt::AlignBottom); packetSizeChart_->addAxis(sizeValAxis_, Qt::AlignLeft);
@@ -550,11 +521,11 @@ void DashboardWidget::setupAnalytics() {
 void DashboardWidget::applyTheme(ThemeMode mode) {
     ThemePalette::apply(mode);
     
-    QColor ppsColor = QColor(100, 200, 255);
-    QColor tcpColor = QColor(100, 220, 100);
-    QColor udpColor = QColor(255, 200, 100);
-    QColor icmpColor = QColor(255, 100, 100);
-    QColor otherColor = QColor(160, 160, 160);
+    QColor ppsColor = ThemePalette::sapphire();
+    QColor tcpColor = ThemePalette::green();
+    QColor udpColor = ThemePalette::yellow();
+    QColor icmpColor = ThemePalette::red();
+    QColor otherColor = ThemePalette::subtext0();
     
     ppsSeries_->setPen(QPen(ppsColor, 2));
     
@@ -569,8 +540,8 @@ void DashboardWidget::applyTheme(ThemeMode mode) {
     styleArea(icmpArea_, icmpColor);
     otherSeries_->setPen(QPen(otherColor, 1.5));
     
-    QColor attackColor = QColor(255, 150, 50); attackColor.setAlpha(80);
-    attackConfidenceArea_->setBrush(attackColor); attackConfidenceArea_->setPen(QPen(QColor(255, 150, 50), 1));
+    QColor attackColor = ThemePalette::peach(); attackColor.setAlpha(80);
+    attackConfidenceArea_->setBrush(attackColor); attackConfidenceArea_->setPen(QPen(ThemePalette::peach(), 1));
     
     timeAxis_->setLabelsColor(ThemePalette::textSecondary());
     ppsAxis_->setLabelsColor(ThemePalette::textSecondary());
@@ -611,11 +582,11 @@ void DashboardWidget::onChartHover(const QPoint& pos) {
     double other = otherSeries_->points()[idx].y();
     double total = pts[idx].y();
 
-    items.append({QColor(116, 199, 236), QString("Total: %1 pps").arg(total, 0, 'f', 1)});
-    items.append({QColor(166, 227, 161), QString("TCP: %1 pps").arg(tcp, 0, 'f', 1)});
-    items.append({QColor(249, 226, 175), QString("UDP: %1 pps").arg(udp, 0, 'f', 1)});
-    items.append({QColor(243, 139, 168), QString("ICMP: %1 pps").arg(icmp, 0, 'f', 1)});
-    items.append({QColor(166, 173, 200), QString("Other: %1 pps").arg(other, 0, 'f', 1)});
+    items.append({ThemePalette::sapphire(), QString("Total: %1 pps").arg(total, 0, 'f', 1)});
+    items.append({ThemePalette::green(), QString("TCP: %1 pps").arg(tcp, 0, 'f', 1)});
+    items.append({ThemePalette::yellow(), QString("UDP: %1 pps").arg(udp, 0, 'f', 1)});
+    items.append({ThemePalette::red(), QString("ICMP: %1 pps").arg(icmp, 0, 'f', 1)});
+    items.append({ThemePalette::subtext0(), QString("Other: %1 pps").arg(other, 0, 'f', 1)});
     
     double conf = attackConfidenceUpper_->points()[idx].y();
     QString footer = QString("Attack Confidence: %1%").arg(conf, 0, 'f', 1);
@@ -686,13 +657,19 @@ void DashboardWidget::addDataPoint(const DetectionResult& result) {
 }
 
 void DashboardWidget::updateSnapshot(float pps, uint64_t totalPackets, int currentLabel) {
-    lblPps_->setText(QString::number(pps, 'f', 1));
-    lblTotalPackets_->setText(QString::number(totalPackets));
+    lblPps_->setText(QString("Current PPS: %1").arg(pps, 0, 'f', 1));
+    lblTotalPackets_->setText(QString("Total Packets: %1").arg(totalPackets));
 }
 
 void DashboardWidget::updateConnectionStatus(bool connected) {
-    if (connected) { lblCollector_->setText("Connected (Live)"); lblCollector_->setStyleSheet("color: #66ff66; font-size: 18px; font-weight: bold; border: none; background: transparent;"); }
-    else { lblCollector_->setText("Disconnected"); lblCollector_->setStyleSheet("color: #ff6666; font-size: 18px; font-weight: bold; border: none; background: transparent;"); }
+    collectorConnected_ = connected;
+    if (connected) {
+        lblCollector_->setText("Collector: Connected (Live)");
+        lblCollector_->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold; background: transparent;").arg(ThemePalette::green().name()));
+    } else {
+        lblCollector_->setText("Collector: Disconnected");
+        lblCollector_->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold; background: transparent;").arg(ThemePalette::red().name()));
+    }
 }
 
 void DashboardWidget::loadHistory(const std::vector<DetectionResult>& events) {
@@ -728,25 +705,32 @@ void DashboardWidget::updateRealtime(const DetectionResult& result, uint64_t tot
     addDataPoint(result);
     if (result.label == 1) totalAttack_++; else totalNormal_++;
     
-    lblTotalPackets_->setText(QString::number(totalPackets));
-    lblPps_->setText(QString::number(result.pps, 'f', 1));
-    lblSources_->setText(QString::number(result.uniqueSourceCount));
-    lblFlows_->setText(QString::number(result.activeFlowsCount));
-    lblDropRate_->setText(QString("%1 pps").arg(result.droppedPackets));
+    lblTotalPackets_->setText(QString("Total Packets: %1").arg(totalPackets));
+    lblPps_->setText(QString("Current PPS: %1").arg(result.pps, 0, 'f', 1));
+    lblSources_->setText(QString("Sources: %1").arg(result.uniqueSourceCount));
+    lblDropRate_->setText(QString("Drop Rate: %1 pps").arg(result.droppedPackets));
     lblDropRate_->setToolTip(QString("Total Dropped: %1 | Queue Size: %2").arg(result.droppedPackets).arg(result.queueSize));
     
-    lblModel_->setText("🧠 " + QString::fromStdString(result.modelName));
+    if (!result.blockedIps.empty()) {
+        bpfCheckbox_->setToolTip(QString("Blocked IPs: %1 (e.g. %2)")
+            .arg(result.blockedIps.size())
+            .arg(QString::fromStdString(result.blockedIps.front())));
+    } else {
+        bpfCheckbox_->setToolTip("No IPs currently blocked by Firewall");
+    }
+
+    lblModel_->setText(QString("\u25CF ") + QString::fromStdString(result.modelName));
     lblModel_->setToolTip(QString("Inference Latency: %1 ms").arg(result.inferenceLatencyMs, 0, 'f', 2));
     
-    lblProbability_->setText(QString("%1%").arg(result.confidence * 100, 0, 'f', 1));
+    lblProbability_->setText(QString("Probability: %1%").arg(result.confidence * 100, 0, 'f', 1));
     if (result.label == 1) {
-        lblProbability_->setStyleSheet("color: #ff6666; font-size: 18px; font-weight: bold; border: none; background: transparent;");
-        lblStatus_->setText("⚠ ATTACK DETECTED"); 
-        lblStatus_->setStyleSheet("color: #ff6666; font-size: 18px; font-weight: bold; border: none; background: transparent;");
+        lblProbability_->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold; background: transparent;").arg(ThemePalette::red().name()));
+        lblStatus_->setText("\u26A0 ATTACK DETECTED"); 
+        lblStatus_->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold; background: transparent;").arg(ThemePalette::red().name()));
     } else {
-        lblProbability_->setStyleSheet("color: #66ff66; font-size: 18px; font-weight: bold; border: none; background: transparent;");
-        lblStatus_->setText("✔ Normal Traffic"); 
-        lblStatus_->setStyleSheet("color: #66ff66; font-size: 18px; font-weight: bold; border: none; background: transparent;");
+        lblProbability_->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold; background: transparent;").arg(ThemePalette::green().name()));
+        lblStatus_->setText("\u2714 Normal Traffic"); 
+        lblStatus_->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold; background: transparent;").arg(ThemePalette::green().name()));
     }
     
     sloHealth_->addHealthPoint(result.label == 0);
