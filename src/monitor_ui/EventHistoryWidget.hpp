@@ -16,12 +16,15 @@
 class TimelineWidget : public QWidget {
     Q_OBJECT
 public:
+    enum class BucketType { Empty = 0, Benign = 1, Attack = 2 };
+    static constexpr int NUM_BUCKETS = 48;
+
     explicit TimelineWidget(QWidget* parent = nullptr);
     void setEvents(const std::vector<DetectionResult>& events, const QDate& day);
 protected:
     void paintEvent(QPaintEvent*) override;
 private:
-    std::vector<int> hourBuckets_; // 48 half-hour buckets: 0=empty, 1=benign, 2=attack
+    std::vector<BucketType> hourBuckets_; // 48 half-hour buckets
     QDate day_;
 };
 
