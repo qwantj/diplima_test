@@ -17,7 +17,9 @@ class TimelineWidget : public QWidget {
     Q_OBJECT
 public:
     enum class BucketType { Empty = 0, Benign = 1, Attack = 2 };
-    static constexpr int NUM_BUCKETS = 48;
+    static constexpr int BUCKETS_PER_HOUR = 2;
+    static constexpr int MINUTES_PER_BUCKET = 30;
+    static constexpr int NUM_BUCKETS = 24 * BUCKETS_PER_HOUR;
 
     explicit TimelineWidget(QWidget* parent = nullptr);
     void setEvents(const std::vector<DetectionResult>& events, const std::vector<SessionInfo>& sessions, const QDate& day);
