@@ -7,6 +7,7 @@
 #include "CSVUtilsTests.hpp"
 #include "test_ModelInferencer.hpp"
 #include "AppLoggerTests.hpp"
+#include "test_SystemMetricsCollector.hpp"
 
 int main(int argc, char *argv[])
 {
@@ -31,6 +32,9 @@ int main(int argc, char *argv[])
 
     TestModelInferencer modelTest;
     status |= QTest::qExec(&modelTest, argc, argv);
+
+    TestSystemMetricsCollector systemMetricsTest;
+    status |= QTest::qExec(&systemMetricsTest, argc, argv);
 
     return status;
 }
