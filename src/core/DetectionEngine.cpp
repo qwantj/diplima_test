@@ -110,9 +110,22 @@ void DetectionEngine::enablePcapDump(const std::string& dir) {
     dumper_.startSession(dir, sessionName);
 }
 
+void DetectionEngine::disablePcapDump() {
+    dumpEnabled_ = false;
+    dumper_.close();
+}
+
 void DetectionEngine::inferenceLoop() {
     AppLogger::get()->info("DetectionEngine: inference loop started (window={}s)",
         INFERENCE_WINDOW_SEC);
+
+    // If in replay mode, wait a bit for capturing_ to become true (avoid race)
+    if (isReplayMode_) {
+        int retries = 0;
+        while (!monitor_.isCapturing() && retries++ < 10) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
 
     while (running_) {
         auto windowStart = std::chrono::steady_clock::now();
@@ -129,22 +142,28 @@ void DetectionEngine::inferenceLoop() {
                 extractor_.processPacket(pkt);
 
                 if (dumpEnabled_)
-                    dumper_.writePacket(pkt, 0); // label updated after inference
+                    dumper_.addPacket(pkt);
             } else {
                 // If in replay mode and monitor stopped capturing, and queue is empty, we are done
                 if (isReplayMode_ && !monitor_.isCapturing() && monitor_.queueSize() == 0) {
                     replayFinished_ = true;
-                    running_ = false;
-                    break;
+                    // We don't set running_ = false here to allow processing the last window
+                    goto final_window;
                 }
                 // No packets available, short sleep
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         }
 
-        if (!running_) break;
+    final_window:
+        if (!running_ && !replayFinished_) break;
 
         processWindow();
+        
+        if (replayFinished_) {
+            running_ = false;
+            break;
+        }
     }
 
     AppLogger::get()->info("DetectionEngine: inference loop stopped.");
@@ -164,6 +183,7 @@ void DetectionEngine::processWindow() {
 
     // Skip inference if window has no packets
     if (result.totalPackets == 0) {
+        if (dumpEnabled_) dumper_.commitWindow(0);
         return;
     }
 
@@ -177,6 +197,7 @@ void DetectionEngine::processWindow() {
         AppLogger::get()->debug("DetectionEngine: PPS ({:.1f}) below threshold ({:.1f}). Marked as Benign.", 
             result.pps, NOISE_THRESHOLD_PPS);
             
+        if (dumpEnabled_) dumper_.commitWindow(0);
         if (resultCallback_) resultCallback_(result);
         return;
     }
@@ -199,6 +220,10 @@ void DetectionEngine::processWindow() {
     result.label = label;
     result.confidence = confidence;
 
+    // --- Phase 1.5: Commit PCAP Window ---
+    if (dumpEnabled_) {
+        dumper_.commitWindow(result.label);
+    }
 
     // --- Phase 2: Incident Tracking ---
     updateIncidentState(result);

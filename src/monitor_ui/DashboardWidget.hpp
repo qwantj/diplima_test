@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QPainterPath>
 #include <QCheckBox>
 #include <QPushButton>
 #include <QTimer>
@@ -109,6 +110,24 @@ private:
     QString centerText_;
 };
 
+// ---- ColorCheckBox: цветной квадрат вместо стандартной галочки ----
+class ColorCheckBox : public QWidget {
+    Q_OBJECT
+public:
+    explicit ColorCheckBox(const QString& label, const QColor& color, QWidget* parent = nullptr);
+    bool isChecked() const { return checked_; }
+    void setChecked(bool v) { checked_ = v; update(); }
+signals:
+    void toggled(bool checked);
+protected:
+    void paintEvent(QPaintEvent*) override;
+    void mousePressEvent(QMouseEvent*) override;
+private:
+    QString label_;
+    QColor  color_;
+    bool    checked_ = true;
+};
+
 // ---- Main Dashboard ----
 class DashboardWidget : public QWidget {
     Q_OBJECT
@@ -117,6 +136,7 @@ public:
 
 signals:
     void bpfToggled(bool enabled);
+    void pcapToggled(bool enabled);
 
 public slots:
     void updateRealtime(const DetectionResult& result, uint64_t totalPackets);
@@ -177,13 +197,13 @@ private:
     InteractiveChartView* ppsChartView_ = nullptr;
     QPushButton* resetBtn_ = nullptr;
 
-    // Layer checkboxes
-    QCheckBox* cbPps_ = nullptr;
-    QCheckBox* cbTcp_ = nullptr;
-    QCheckBox* cbUdp_ = nullptr;
-    QCheckBox* cbIcmp_ = nullptr;
-    QCheckBox* cbOther_ = nullptr;
-    QCheckBox* cbConf_ = nullptr;
+    // Layer color-checkboxes
+    ColorCheckBox* cbPps_  = nullptr;
+    ColorCheckBox* cbTcp_  = nullptr;
+    ColorCheckBox* cbUdp_  = nullptr;
+    ColorCheckBox* cbIcmp_ = nullptr;
+    ColorCheckBox* cbOther_= nullptr;
+    ColorCheckBox* cbConf_ = nullptr;
 
     // Donut charts (CPU, RAM, Traffic Ratio)
     QChart* cpuChart_ = nullptr;

@@ -17,9 +17,31 @@ TimelineWidget::TimelineWidget(QWidget* parent) : QWidget(parent) {
     hourBuckets_.resize(NUM_BUCKETS, BucketType::Empty);
 }
 
-void TimelineWidget::setEvents(const std::vector<DetectionResult>& events, const QDate& day) {
+void TimelineWidget::setEvents(const std::vector<DetectionResult>& events, const std::vector<SessionInfo>& sessions, const QDate& day) {
     day_ = day;
     std::fill(hourBuckets_.begin(), hourBuckets_.end(), BucketType::Empty);
+    
+    QDateTime dayStart(day, QTime(0, 0));
+    QDateTime dayEnd = dayStart.addDays(1).addMSecs(-1);
+    QDateTime now = QDateTime::currentDateTime();
+
+    // Mark buckets as Benign if there's an active session during that time
+    for (const auto& s : sessions) {
+        QDateTime sEnd = s.endTime.isValid() ? s.endTime : now;
+        if (s.startTime > dayEnd || sEnd < dayStart) continue; // No overlap
+
+        QDateTime overlapStart = std::max(s.startTime, dayStart);
+        QDateTime overlapEnd = std::min(sEnd, dayEnd);
+        
+        int startIdx = overlapStart.time().hour() * 2 + (overlapStart.time().minute() / 30);
+        int endIdx = overlapEnd.time().hour() * 2 + (overlapEnd.time().minute() / 30);
+        
+        for (int i = startIdx; i <= endIdx && i < NUM_BUCKETS; ++i) {
+            hourBuckets_[i] = BucketType::Benign;
+        }
+    }
+
+    // Overwrite with Attack if there's an attack
     for (const auto& e : events) {
         if (e.timestamp.date() != day) continue;
         int hour = e.timestamp.time().hour();
@@ -27,7 +49,6 @@ void TimelineWidget::setEvents(const std::vector<DetectionResult>& events, const
         int idx = hour * 2 + (min / 30);
         if (idx < NUM_BUCKETS) {
             if (e.label == 1) hourBuckets_[idx] = BucketType::Attack;
-            else if (hourBuckets_[idx] == BucketType::Empty) hourBuckets_[idx] = BucketType::Benign;
         }
     }
     update();
@@ -73,10 +94,10 @@ EventHistoryWidget::EventHistoryWidget(QWidget* parent) : QWidget(parent) {
     refreshBtn_ = new QPushButton("Refresh");
     exportBtn_ = new QPushButton("Export to CSV");
     exportPdfBtn_ = new QPushButton("Generate PDF Report");
-    QString btnStyle = ThemePalette::buttonStyleSheet();
-    refreshBtn_->setStyleSheet(btnStyle); 
-    exportBtn_->setStyleSheet(btnStyle);
-    exportPdfBtn_->setStyleSheet(btnStyle);
+    
+    refreshBtn_->setToolTip("Обновить историю инцидентов из базы данных");
+    exportBtn_->setToolTip("Экспортировать текущую таблицу в формате CSV");
+    exportPdfBtn_->setToolTip("Сгенерировать подробный PDF-отчет по выбранному инциденту");
     
     topRow->addWidget(refreshBtn_); 
     topRow->addWidget(exportBtn_);
@@ -84,31 +105,31 @@ EventHistoryWidget::EventHistoryWidget(QWidget* parent) : QWidget(parent) {
     topRow->addStretch();
     
     QLabel* dateLabel = new QLabel("Date:");
-    dateLabel->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::subtext0().name()));
+    dateLabel->setProperty("cssClass", "statusLabelText");
     topRow->addWidget(dateLabel);
     
     dateEdit_ = new QDateEdit(QDate::currentDate());
     dateEdit_->setCalendarPopup(true);
-    dateEdit_->setStyleSheet(QString("QDateEdit { background: %1; color: %2; padding: 6px; border-radius: 4px; border: 1px solid %3; }")
-        .arg(ThemePalette::surface0().name(), ThemePalette::text().name(), ThemePalette::surface1().name()));
+    dateEdit_->setMinimumWidth(110);
+    dateEdit_->setToolTip("Выберите дату для просмотра истории инцидентов");
     topRow->addWidget(dateEdit_);
 
     filterType_ = new QComboBox();
     filterType_->addItems({"All Types", "DDoS Attack"});
-    filterType_->setStyleSheet(QString("QComboBox { background: %1; color: %2; padding: 6px; border-radius: 4px; border: 1px solid %3; }")
-        .arg(ThemePalette::surface0().name(), ThemePalette::text().name(), ThemePalette::surface1().name()));
+    filterType_->setToolTip("Фильтр по типу события (Атака / Все)");
     topRow->addWidget(filterType_);
 
     ipFilter_ = new QLineEdit();
     ipFilter_->setPlaceholderText("Filter by IP...");
-    ipFilter_->setStyleSheet(QString("QLineEdit { background: %1; color: %2; padding: 6px; border-radius: 4px; border: 1px solid %3; }")
-        .arg(ThemePalette::surface0().name(), ThemePalette::text().name(), ThemePalette::surface1().name()));
+    ipFilter_->setToolTip("Быстрый поиск по IP-адресу в истории инцидентов");
     topRow->addWidget(ipFilter_);
     layout->addLayout(topRow);
 
     timeline_ = new TimelineWidget();
     QLabel* timelineLabel = new QLabel("Uptime / Threat Timeline (24h)");
-    timelineLabel->setStyleSheet(QString("color: %1; font-weight: bold; text-transform: uppercase; font-size: 11px;").arg(ThemePalette::text().name()));
+    timelineLabel->setProperty("cssClass", "statusLabelText");
+    timelineLabel->setToolTip("Временная шкала инцидентов (Зеленый - норма, Красный - атака, Серый - нет данных)");
+    timeline_->setToolTip("Временная шкала инцидентов (Зеленый - норма, Красный - атака, Серый - нет данных)");
     layout->addWidget(timelineLabel);
     layout->addWidget(timeline_);
 
@@ -121,7 +142,6 @@ EventHistoryWidget::EventHistoryWidget(QWidget* parent) : QWidget(parent) {
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setShowGrid(false);
     table_->setAlternatingRowColors(true);
-    table_->setStyleSheet(ThemePalette::tableStyleSheet());
     layout->addWidget(table_);
 
     connect(refreshBtn_, &QPushButton::clicked, this, &EventHistoryWidget::refreshData);
@@ -137,6 +157,11 @@ void EventHistoryWidget::setDatabaseManager(DatabaseManager* db) {
     refreshData();
 }
 
+void EventHistoryWidget::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    refreshData();
+}
+
 void EventHistoryWidget::refreshData() {
     if (!dbManager_) return;
     auto events = dbManager_->getSecurityEvents(200);
@@ -145,12 +170,13 @@ void EventHistoryWidget::refreshData() {
         auto& e = events[i];
         table_->setItem(i, 0, new QTableWidgetItem(e.timestamp.toString("yyyy-MM-dd HH:mm:ss")));
         table_->setItem(i, 1, new QTableWidgetItem("10.0")); // dummy duration
-        table_->setItem(i, 2, new QTableWidgetItem("unknown"));
+        table_->setItem(i, 2, new QTableWidgetItem(e.topTalkers.empty() ? "unknown" : QString::fromStdString(e.topTalkers[0].first)));
         table_->setItem(i, 3, new QTableWidgetItem(QString::number(e.pps, 'f', 1)));
-        table_->setItem(i, 4, new QTableWidgetItem("DDoS Attack"));
+        table_->setItem(i, 4, new QTableWidgetItem(e.modelName.empty() ? "DDoS Attack" : QString::fromStdString(e.modelName)));
         table_->setItem(i, 5, new QTableWidgetItem(QString::number(e.confidence, 'f', 2)));
     }
-    timeline_->setEvents(events, dateEdit_->date());
+    auto sessions = dbManager_->getSessions();
+    timeline_->setEvents(events, sessions, dateEdit_->date());
     applyFilter();
 }
 

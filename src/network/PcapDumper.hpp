@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <pcapplusplus/PcapFileDevice.h>
 #include <pcapplusplus/RawPacket.h>
 
@@ -10,11 +11,20 @@ public:
     ~PcapDumper();
 
     bool startSession(const std::string& baseDir, const std::string& sessionName);
-    void writePacket(const pcpp::RawPacket& packet, int label);
+    
+    // Window-based dumping
+    void addPacket(const pcpp::RawPacket& packet);
+    void commitWindow(int label); // 0: Benign, 1: Attack
+    
     void close();
-    bool isOpen() const { return writer_ != nullptr; }
+    bool isOpen() const { return active_; }
 
 private:
-    pcpp::PcapFileWriterDevice* writer_ = nullptr;
-    std::string currentPath_;
+    bool active_ = false;
+    std::string sessionDir_;
+    
+    std::vector<pcpp::RawPacket> windowBuffer_;
+    
+    pcpp::PcapFileWriterDevice* benignWriter_ = nullptr;
+    pcpp::PcapFileWriterDevice* attackWriter_ = nullptr;
 };

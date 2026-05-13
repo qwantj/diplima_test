@@ -1,12 +1,12 @@
 {
-    "collector_host": "localhost",
+    "collector_host": "127.0.0.1",
     "tcp_port": 50050,
     "database": {
         "host": "localhost",
         "port": 5432,
         "name": "ddos_detection_db",
         "user": "postgres",
-        "password": ""
+        "password": "qwerty"
     },
     "ml": {
         "default_model": "models/rf_model.onnx",

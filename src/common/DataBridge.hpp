@@ -32,6 +32,7 @@ signals:
 
 public slots:
     void sendBpfConfig(bool enable);
+    void sendDumpConfig(bool enable);
 
 private slots:
     void onCollectorConnected();

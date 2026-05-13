@@ -76,6 +76,8 @@ constexpr const char* CMD_LOAD_PCAP   = "load_pcap";
 constexpr const char* CMD_STOP_REPLAY = "stop_replay";
 constexpr const char* CMD_LOAD_MODEL  = "load_model";
 constexpr const char* CMD_CONFIG_BPF  = "config_bpf";
+constexpr const char* CMD_CONFIG_DUMP = "config_dump";
+constexpr const char* CMD_CONFIG_UPDATE = "config_update";
 constexpr const char* CMD_STOP        = "stop";
 
 // Serialize DetectionResult to JSON

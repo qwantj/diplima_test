@@ -49,6 +49,8 @@ public:
 
     // Pcap dumper
     void enablePcapDump(const std::string& dir);
+    void disablePcapDump();
+    bool isDumpEnabled() const { return dumpEnabled_; }
 
     // Active Mitigation
     void setMitigationEnabled(bool enabled);

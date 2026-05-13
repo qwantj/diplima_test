@@ -1,55 +1,32 @@
 #include "monitor_ui/SessionWidget.hpp"
+#include "monitor_ui/ThemePalette.hpp"
 #include <QHeaderView>
 #include <QLabel>
 
 SessionWidget::SessionWidget(QWidget* parent) : QWidget(parent) {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(15, 15, 15, 15);
 
     table_ = new QTableWidget(this);
     table_->setColumnCount(6);
     table_->setHorizontalHeaderLabels({"ID", "Start Time", "Interface/PCAP", "Model", "Attacks", "Total Packets"});
+    
+    table_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table_->horizontalHeader()->setStretchLastSection(true);
+    
     table_->verticalHeader()->setVisible(false);
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setShowGrid(false);
     table_->setSortingEnabled(true);
-    table_->setStyleSheet(R"(
-        QTableWidget {
-            background-color: #1e1e2e;
-            alternate-background-color: #242437;
-            color: #cdd6f4;
-            gridline-color: transparent;
-            border: none;
-            font-size: 12px;
-        }
-        QHeaderView::section {
-            background-color: #181825;
-            color: #a6adc8;
-            font-weight: bold;
-            padding: 10px;
-            border: none;
-            text-transform: uppercase;
-            font-size: 11px;
-        }
-        QTableWidget::item {
-            padding: 12px;
-            border-bottom: 1px solid #313244;
-        }
-        QTableWidget::item:selected {
-            background-color: #45475a;
-            color: #f5e0dc;
-        }
-    )");
     table_->setAlternatingRowColors(true);
 
     layout->addWidget(table_);
 
     connect(table_, &QTableWidget::cellDoubleClicked, [this](int row, int) {
         auto* item = table_->item(row, 0);
-        if (item) emit sessionSelected(item->text().toInt());
+        if (item) emit sessionSelected(item->data(Qt::DisplayRole).toInt());
     });
 }
 
@@ -59,20 +36,28 @@ void SessionWidget::loadSessions(const std::vector<SessionInfo>& sessions) {
 
     for (int i = 0; i < (int)sessions.size(); i++) {
         const auto& s = sessions[i];
+        
         auto* idItem = new QTableWidgetItem(); idItem->setData(Qt::DisplayRole, s.id);
         table_->setItem(i, 0, idItem);
+        
         table_->setItem(i, 1, new QTableWidgetItem(s.startTime.toString("yyyy-MM-dd HH:mm:ss")));
         table_->setItem(i, 2, new QTableWidgetItem(s.interfaceName));
         table_->setItem(i, 3, new QTableWidgetItem(s.modelName));
+        
         auto* attackItem = new QTableWidgetItem(); attackItem->setData(Qt::DisplayRole, (qlonglong)s.totalAttacks);
-        if (s.totalAttacks > 0) attackItem->setForeground(QColor(255, 100, 100));
+        if (s.totalAttacks > 0) attackItem->setForeground(ThemePalette::red());
         table_->setItem(i, 4, attackItem);
+        
         auto* pktItem = new QTableWidgetItem(); pktItem->setData(Qt::DisplayRole, (qlonglong)s.totalPackets);
         table_->setItem(i, 5, pktItem);
+
+        // Align all to left
+        for (int c = 0; c < 6; c++) {
+            if (table_->item(i, c))
+                table_->item(i, c)->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        }
     }
 
     table_->setSortingEnabled(true);
     table_->sortByColumn(0, Qt::DescendingOrder);
-    table_->resizeColumnsToContents();
-    table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
 }

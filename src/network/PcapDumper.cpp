@@ -1,8 +1,6 @@
 #include "network/PcapDumper.hpp"
 #include "common/AppLogger.hpp"
 
-#include <QDir>
-#include <QDateTime>
 #include <filesystem>
 
 PcapDumper::PcapDumper() {}
@@ -12,33 +10,66 @@ PcapDumper::~PcapDumper() { close(); }
 bool PcapDumper::startSession(const std::string& baseDir, const std::string& sessionName) {
     close();
 
-    std::string dirPath = baseDir + "/" + sessionName;
-    std::filesystem::create_directories(dirPath);
-
-    currentPath_ = dirPath + "/capture.pcap";
-    writer_ = new pcpp::PcapFileWriterDevice(currentPath_);
-
-    if (!writer_->open()) {
-        AppLogger::get()->error("PcapDumper: failed to open {}", currentPath_);
-        delete writer_;
-        writer_ = nullptr;
+    sessionDir_ = baseDir + "/" + sessionName;
+    try {
+        std::filesystem::create_directories(sessionDir_);
+    } catch (const std::exception& e) {
+        AppLogger::get()->error("PcapDumper: failed to create directory {}: {}", sessionDir_, e.what());
         return false;
     }
 
-    AppLogger::get()->info("PcapDumper: started session at {}", currentPath_);
+    benignWriter_ = new pcpp::PcapFileWriterDevice(sessionDir_ + "/benign.pcap");
+    attackWriter_ = new pcpp::PcapFileWriterDevice(sessionDir_ + "/attack.pcap");
+
+    if (!benignWriter_->open()) {
+        AppLogger::get()->error("PcapDumper: failed to open benign.pcap");
+        return false;
+    }
+    if (!attackWriter_->open()) {
+        AppLogger::get()->error("PcapDumper: failed to open attack.pcap");
+        return false;
+    }
+
+    active_ = true;
+    AppLogger::get()->info("PcapDumper: session started in {}", sessionDir_);
     return true;
 }
 
-void PcapDumper::writePacket(const pcpp::RawPacket& packet, int label) {
-    if (writer_)
-        writer_->writePacket(packet);
+void PcapDumper::addPacket(const pcpp::RawPacket& packet) {
+    if (!active_) return;
+    windowBuffer_.push_back(packet);
+}
+
+void PcapDumper::commitWindow(int label) {
+    if (!active_) {
+        windowBuffer_.clear();
+        return;
+    }
+
+    pcpp::PcapFileWriterDevice* target = (label == 1) ? attackWriter_ : benignWriter_;
+    
+    if (target) {
+        for (const auto& pkt : windowBuffer_) {
+            target->writePacket(pkt);
+        }
+    }
+    
+    windowBuffer_.clear();
 }
 
 void PcapDumper::close() {
-    if (writer_) {
-        writer_->close();
-        delete writer_;
-        writer_ = nullptr;
-        AppLogger::get()->info("PcapDumper: closed.");
+    active_ = false;
+    windowBuffer_.clear();
+
+    if (benignWriter_) {
+        benignWriter_->close();
+        delete benignWriter_;
+        benignWriter_ = nullptr;
     }
+    if (attackWriter_) {
+        attackWriter_->close();
+        delete attackWriter_;
+        attackWriter_ = nullptr;
+    }
+    AppLogger::get()->info("PcapDumper: closed session.");
 }

@@ -8,10 +8,31 @@ TcpClient::TcpClient(QObject* parent)
     , socket_(new QTcpSocket(this))
     , reconnectTimer_(new QTimer(this))
 {
-    reconnectTimer_->setInterval(5000);
+    reconnectTimer_->setInterval(3000); // Reduce to 3 seconds for better responsiveness
     connect(socket_, &QTcpSocket::connected, this, &TcpClient::onConnected);
     connect(socket_, &QTcpSocket::disconnected, this, &TcpClient::onDisconnected);
     connect(socket_, &QTcpSocket::readyRead, this, &TcpClient::onReadyRead);
+    
+    // Using QOverload for compatibility with older Qt versions if needed, 
+    // but Qt 5.15+ uses errorOccurred
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+    connect(socket_, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError error) {
+        AppLogger::get()->error("TcpClient socket error ({}): {}", (int)error, socket_->errorString().toStdString());
+        // Force state to unconnected if it's not already, to allow tryReconnect to work
+        if (socket_->state() != QTcpSocket::UnconnectedState) {
+            socket_->abort();
+        }
+    });
+#else
+    connect(socket_, static_cast<void(QAbstractSocket::*)(QAbstractSocket::SocketError)>(&QAbstractSocket::error),
+        this, [this](QAbstractSocket::SocketError error) {
+        AppLogger::get()->error("TcpClient socket error ({}): {}", (int)error, socket_->errorString().toStdString());
+        if (socket_->state() != QTcpSocket::UnconnectedState) {
+            socket_->abort();
+        }
+    });
+#endif
+
     connect(reconnectTimer_, &QTimer::timeout, this, &TcpClient::tryReconnect);
 }
 
@@ -23,7 +44,15 @@ TcpClient::~TcpClient() {
 void TcpClient::connectToCollector(const QString& host, quint16 port) {
     host_ = host;
     port_ = port;
-    socket_->connectToHost(host, port);
+    
+    if (socket_->state() != QTcpSocket::ConnectedState) {
+        if (socket_->state() != QTcpSocket::UnconnectedState) {
+            socket_->abort();
+        }
+        AppLogger::get()->info("TcpClient: initiating connection to {}:{}", host.toStdString(), port);
+        socket_->connectToHost(host, port);
+        reconnectTimer_->start();
+    }
 }
 
 void TcpClient::disconnectFromCollector() {
@@ -44,14 +73,15 @@ void TcpClient::sendCommand(const std::string& cmd, const nlohmann::json& data) 
 
 void TcpClient::onConnected() {
     reconnectTimer_->stop();
-    AppLogger::get()->info("Connected to collector.");
+    AppLogger::get()->info("Connected to collector at {}:{}.", host_.toStdString(), port_);
     emit connectedToServer();
 }
 
 void TcpClient::onDisconnected() {
     AppLogger::get()->warn("Disconnected from collector. Will retry...");
     emit disconnectedFromServer();
-    reconnectTimer_->start();
+    if (!reconnectTimer_->isActive())
+        reconnectTimer_->start();
 }
 
 void TcpClient::onReadyRead() {
@@ -68,8 +98,18 @@ void TcpClient::onReadyRead() {
 }
 
 void TcpClient::tryReconnect() {
-    if (socket_->state() == QTcpSocket::UnconnectedState)
-        socket_->connectToHost(host_, port_);
+    if (socket_->state() == QTcpSocket::ConnectedState) {
+        reconnectTimer_->stop();
+        return;
+    }
+
+    AppLogger::get()->info("Attempting to reconnect to collector at {}:{} (current state: {})", 
+        host_.toStdString(), port_, (int)socket_->state());
+    
+    if (socket_->state() != QTcpSocket::UnconnectedState) {
+        socket_->abort();
+    }
+    socket_->connectToHost(host_, port_);
 }
 
 void TcpClient::processLine(const QByteArray& line) {

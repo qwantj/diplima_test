@@ -20,7 +20,7 @@ public:
     static constexpr int NUM_BUCKETS = 48;
 
     explicit TimelineWidget(QWidget* parent = nullptr);
-    void setEvents(const std::vector<DetectionResult>& events, const QDate& day);
+    void setEvents(const std::vector<DetectionResult>& events, const std::vector<SessionInfo>& sessions, const QDate& day);
 protected:
     void paintEvent(QPaintEvent*) override;
 private:
@@ -33,6 +33,9 @@ class EventHistoryWidget : public QWidget {
 public:
     explicit EventHistoryWidget(QWidget* parent = nullptr);
     void setDatabaseManager(DatabaseManager* dbManager);
+
+protected:
+    void showEvent(QShowEvent* event) override;
 
 private slots:
     void refreshData();

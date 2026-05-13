@@ -53,6 +53,9 @@ private:
     SessionWidget*       sessionWidget_ = nullptr;
     EventHistoryWidget*  eventHistoryWidget_ = nullptr;
 
+    QLabel* dbDot_ = nullptr;
+    QLabel* dbTxt_ = nullptr;
+
     QStackedWidget* stackedWidget_ = nullptr;
     QListWidget*    sidebarList_ = nullptr;
 
@@ -129,26 +132,8 @@ void MainWindow::setupUI() {
 
     // Sidebar
     sidebarList_ = new QListWidget();
-    sidebarList_->setFixedWidth(160);
-    sidebarList_->setStyleSheet(QString(R"(
-        QListWidget {
-            background: %1; border: none; padding: 0px;
-            font-size: 13px; color: %2; outline: none;
-        }
-        QListWidget::item {
-            padding: 15px 18px; border-left: 4px solid transparent;
-        }
-        QListWidget::item:selected {
-            background: %3; color: %4; border-left: 4px solid %4;
-        }
-        QListWidget::item:hover:!selected {
-            background: %5;
-        }
-    )")
-    .arg(ThemePalette::mantle().name(), ThemePalette::subtext0().name(),
-         ThemePalette::surface0().name(), ThemePalette::green().name(),
-         ThemePalette::base().name()));
-
+    sidebarList_->setFixedWidth(185);
+    sidebarList_->setProperty("cssClass", "sidebarList");
     sidebarList_->setIconSize(QSize(22, 22));
 
     auto addSidebarItem = [this](const QString& text, const QColor& color, int iconType) {
@@ -185,7 +170,7 @@ void MainWindow::setupUI() {
 
     addSidebarItem("Dashboard", ThemePalette::green(), 0);
     addSidebarItem("Deep Analytics", ThemePalette::blue(), 1);
-    addSidebarItem("Event Log (Live)", ThemePalette::peach(), 2);
+    addSidebarItem("Event Log", ThemePalette::peach(), 2);
     addSidebarItem("Security Incidents", ThemePalette::blue(), 3);
     addSidebarItem("Sessions History", ThemePalette::mauve(), 4);
     
@@ -193,7 +178,6 @@ void MainWindow::setupUI() {
     contentLayout->addWidget(sidebarList_);
 
     stackedWidget_ = new QStackedWidget();
-    stackedWidget_->setStyleSheet(QString("background: %1;").arg(ThemePalette::crust().name()));
     dashboardWidget_ = new DashboardWidget();
     logWidget_ = new LogWidget();
     sessionWidget_ = new SessionWidget();
@@ -211,12 +195,9 @@ void MainWindow::setupUI() {
 
     auto* toolbar = addToolBar("Main");
     toolbar->setMovable(false);
-    toolbar->setStyleSheet(QString("QToolBar { background: %1; border-bottom: 1px solid %2; padding: 8px; spacing: 12px; }")
-        .arg(ThemePalette::mantle().name(), ThemePalette::surface0().name()));
 
     auto* openPcapBtn = new QPushButton("Открыть PCAP");
-    openPcapBtn->setStyleSheet(QString("QPushButton { padding: 5px 12px; color: %1; font-weight: bold; background: %2; border: 1px solid %3; border-radius: 4px; } QPushButton:hover { background: %3; }")
-        .arg(ThemePalette::yellow().name(), ThemePalette::surface0().name(), ThemePalette::surface1().name()));
+    openPcapBtn->setProperty("cssClass", "toolbarBtnYellow");
     connect(openPcapBtn, &QPushButton::clicked, [this]() {
         QString path = QFileDialog::getOpenFileName(this, "Open PCAP", "", "PCAP files (*.pcap *.pcapng)");
         if (!path.isEmpty()) {
@@ -226,13 +207,43 @@ void MainWindow::setupUI() {
     });
     toolbar->addWidget(openPcapBtn);
 
+    // Кнопка возврата к live трафику (п.9)
+    auto* liveReturnBtn = new QPushButton("⏹ Live");
+    liveReturnBtn->setToolTip("Вернуться к live-трафику от коллектора");
+    liveReturnBtn->setProperty("cssClass", "toolbarBtnGreen");
+    connect(liveReturnBtn, &QPushButton::clicked, [this]() {
+        // Отправляем команду остановить replay и вернуться к live
+        nlohmann::json data; data["action"] = "stop_replay";
+        dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_PCAP, data);
+    });
+    toolbar->addWidget(liveReturnBtn);
+
+    auto* recordBtn = new QPushButton("⏺ Запись");
+    recordBtn->setCheckable(true);
+    recordBtn->setToolTip("Включить/выключить сохранение PCAP-дампов трафика");
+    
+    recordBtn->setProperty("cssClass", "toolbarBtnPeach");
+    
+    connect(recordBtn, &QPushButton::toggled, [this, recordBtn](bool checked) {
+        if (checked) {
+            recordBtn->setText("⏹ Стоп");
+            recordBtn->setProperty("cssClass", "toolbarBtnRed");
+        } else {
+            recordBtn->setText("⏺ Запись");
+            recordBtn->setProperty("cssClass", "toolbarBtnPeach");
+        }
+        recordBtn->style()->unpolish(recordBtn);
+        recordBtn->style()->polish(recordBtn);
+        dataBridge_->sendDumpConfig(checked);
+    });
+    toolbar->addWidget(recordBtn);
+
     auto* folderBtn = new QPushButton("📂");
-    folderBtn->setStyleSheet(QString("QPushButton { padding: 5px 8px; color: %1; background: %2; border: 1px solid %3; border-radius: 4px; } QPushButton:hover { background: %3; }")
-        .arg(ThemePalette::yellow().name(), ThemePalette::surface0().name(), ThemePalette::surface1().name()));
+    folderBtn->setProperty("cssClass", "toolbarBtnYellow");
     toolbar->addWidget(folderBtn);
 
     toolbar->addSeparator();
-    auto* modelLbl = new QLabel(" Model: "); modelLbl->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::overlay1().name()));
+    auto* modelLbl = new QLabel(" Model: "); 
     toolbar->addWidget(modelLbl);
     
     auto* modelCombo = new QComboBox();
@@ -240,8 +251,6 @@ void MainWindow::setupUI() {
     QStringList modelFiles = modelsDir.entryList(QStringList() << "*.onnx", QDir::Files);
     if (modelFiles.isEmpty()) modelFiles << "rf_model.onnx" << "mlp_model.onnx";
     modelCombo->addItems(modelFiles);
-    modelCombo->setStyleSheet(QString("QComboBox { color: %1; background: %2; border: 1px solid %3; border-radius: 4px; padding: 2px 12px; min-width: 150px; }")
-        .arg(ThemePalette::text().name(), ThemePalette::surface0().name(), ThemePalette::surface1().name()));
     connect(modelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, modelCombo](int idx) {
         QString modelName = modelCombo->itemText(idx);
         nlohmann::json data; data["path"] = std::string("models/") + modelName.toStdString();
@@ -250,10 +259,20 @@ void MainWindow::setupUI() {
     toolbar->addWidget(modelCombo);
 
     toolbar->addSeparator();
+    auto* dbIndicator = new QWidget(); auto* dbLayout = new QHBoxLayout(dbIndicator);
+    dbLayout->setContentsMargins(0, 0, 0, 0); dbLayout->setSpacing(8);
+    dbDot_ = new QLabel("●"); dbDot_->setProperty("cssClass", "statusLabelRed");
+    dbTxt_ = new QLabel("DB: Disconnected"); dbTxt_->setProperty("cssClass", "statusLabelText");
+    dbDot_->setToolTip("Статус подключения к базе данных PostgreSQL");
+    dbTxt_->setToolTip("Статус подключения к базе данных PostgreSQL");
+    dbLayout->addWidget(dbDot_); dbLayout->addWidget(dbTxt_);
+    toolbar->addWidget(dbIndicator);
+
+    toolbar->addSeparator();
     auto* liveIndicator = new QWidget(); auto* liveLayout = new QHBoxLayout(liveIndicator);
     liveLayout->setContentsMargins(0, 0, 0, 0); liveLayout->setSpacing(8);
-    auto* dot = new QLabel("●"); dot->setStyleSheet(QString("color: %1; font-size: 16px;").arg(ThemePalette::green().name()));
-    auto* txt = new QLabel("Live"); txt->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 13px;").arg(ThemePalette::text().name()));
+    auto* dot = new QLabel("●"); dot->setProperty("cssClass", "statusLabelGreen");
+    auto* txt = new QLabel("Live"); txt->setProperty("cssClass", "statusLabelText");
     liveLayout->addWidget(dot); liveLayout->addWidget(txt);
     toolbar->addWidget(liveIndicator);
 
@@ -261,12 +280,9 @@ void MainWindow::setupUI() {
     toolbar->addWidget(spacer);
 
     auto* themeLbl = new QLabel("Theme:");
-    themeLbl->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::overlay1().name()));
     toolbar->addWidget(themeLbl);
     auto* themeCombo = new QComboBox();
     themeCombo->addItems({"Dark", "Light"});
-    themeCombo->setStyleSheet(QString("QComboBox { color: %1; background: %2; border: 1px solid %3; border-radius: 4px; padding: 2px 12px; }")
-        .arg(ThemePalette::text().name(), ThemePalette::surface0().name(), ThemePalette::surface1().name()));
     connect(themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
         ThemeMode mode = idx == 0 ? ThemeMode::Dark : ThemeMode::Light;
         dashboardWidget_->applyTheme(mode);
@@ -316,12 +332,26 @@ void MainWindow::setupConnections() {
                 if (trayIcon_)
                     trayIcon_->showMessage("DDoS Monitor", "Pcap replay completed.",
                         QSystemTrayIcon::Information, 3000);
+            } else if (event == "replay_started") {
+                AppLogger::get()->info("Replay started. Clearing dashboard.");
+                dashboardWidget_->loadHistory({}); // Clear charts
+                logWidget_->loadHistory({});       // Clear log
+            } else if (event == "live_resumed") {
+                int sid = data.value("session_id").toInt();
+                if (sid > 0) {
+                    AppLogger::get()->info("Live resumed. Reloading session {}", sid);
+                    onSessionSelected(sid);
+                }
             }
         });
 
     // BPF toggle
     connect(dashboardWidget_, &DashboardWidget::bpfToggled,
             dataBridge_, &DataBridge::sendBpfConfig);
+    
+    // PCAP Toggle
+    connect(dashboardWidget_, &DashboardWidget::pcapToggled,
+            dataBridge_, &DataBridge::sendDumpConfig);
 
     // Session selected
     connect(sessionWidget_, &SessionWidget::sessionSelected,
@@ -362,8 +392,21 @@ void MainWindow::onCollectorStatusChanged(bool connected) {
 }
 
 void MainWindow::onDatabaseStatusChanged(bool connected) {
+    if (dbDot_ && dbTxt_) {
+        if (connected) {
+            dbDot_->setProperty("cssClass", "statusLabelGreen");
+            dbTxt_->setText("DB: Connected");
+        } else {
+            dbDot_->setProperty("cssClass", "statusLabelRed");
+            dbTxt_->setText("DB: Disconnected");
+        }
+        dbDot_->style()->unpolish(dbDot_); dbDot_->style()->polish(dbDot_);
+        dbTxt_->style()->unpolish(dbTxt_); dbTxt_->style()->polish(dbTxt_);
+    }
+
     if (connected) {
         eventHistoryWidget_->setDatabaseManager(dataBridge_->databaseManager());
+        pollSessions();
     }
 }
 

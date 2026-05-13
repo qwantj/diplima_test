@@ -81,6 +81,8 @@ public:
     static QString tableStyleSheet();
     // Returns QSS for styled buttons
     static QString buttonStyleSheet();
+    // Returns a complete global QSS stylesheet for all widgets (applied on theme change)
+    static QString globalStyleSheet();
 
 private:
     static ThemeMode currentMode_;

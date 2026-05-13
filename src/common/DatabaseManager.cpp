@@ -33,6 +33,8 @@ bool DatabaseManager::connectToDatabase(const QString& host, int port,
     db_.setUserName(user_);
     db_.setPassword(password_);
 
+    AppLogger::get()->info("Connecting to DB with user: '{}', password length: {}", user_.toStdString(), password_.length());
+
     if (!db_.open()) {
         AppLogger::get()->error("Database connection error: {} {}",
             db_.lastError().text().toStdString(),
@@ -231,6 +233,11 @@ std::vector<DetectionResult> DatabaseManager::getSecurityEvents(int limit) {
         r.confidence = q.value(2).toFloat();
         r.pps = q.value(3).toDouble();
         r.sessionId = q.value(5).toInt();
+        
+        // Use topTalkers[0].first for attacker_ip and modelName for type_label
+        r.topTalkers.push_back({q.value(4).toString().toStdString(), 0});
+        r.modelName = q.value(1).toString().toStdString();
+        
         result.push_back(r);
     }
     return result;

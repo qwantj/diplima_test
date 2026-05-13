@@ -1,6 +1,7 @@
 #include <QCoreApplication>
 #include <QCommandLineParser>
 #include <QTimer>
+#include <QDateTime>
 
 #include "common/AppLogger.hpp"
 #include "common/Protocol.hpp"
@@ -16,6 +17,7 @@
 #include <QHostAddress>
 
 #ifdef Q_OS_WIN
+#define NOMINMAX
 #include <windows.h>
 #endif
 
@@ -26,24 +28,19 @@ static void signalHandler(int) {
     QCoreApplication::quit();
 }
 
-// Поиск IP-адреса по человекочитаемому имени (например, "Wi-Fi" или "Ethernet")
 static std::string resolveNetworkInterface(const std::string& userInput) {
     QString input = QString::fromStdString(userInput).trimmed().remove(' ').remove('-').remove('_');
-    
-    // Специальный маппинг для Wi-Fi в русской локализации
     bool isWiFiQuery = (input.compare("WiFi", Qt::CaseInsensitive) == 0);
 
     for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
         QString friendlyName = netIface.humanReadableName();
         QString systemName = netIface.name();
-        
         QString cleanFriendly = friendlyName.simplified().remove(' ').remove('-').remove('_');
         QString cleanSystem = systemName.simplified().remove(' ').remove('-').remove('_');
 
         bool match = (cleanFriendly.compare(input, Qt::CaseInsensitive) == 0) ||
                      (cleanSystem.compare(input, Qt::CaseInsensitive) == 0);
         
-        // Если ищем wifi, а нашли "Беспроводная сеть" (или ее вариант в кракозябрах)
         if (!match && isWiFiQuery) {
             if (friendlyName.contains("Беспроводная", Qt::CaseInsensitive) || 
                 friendlyName.contains("СЃРµС‚СЊ", Qt::CaseInsensitive)) {
@@ -64,10 +61,6 @@ static std::string resolveNetworkInterface(const std::string& userInput) {
     return userInput;
 }
 
-#ifdef Q_OS_WIN
-#include <windows.h>
-#endif
-
 int main(int argc, char* argv[]) {
 #ifdef Q_OS_WIN
     SetConsoleOutputCP(CP_UTF8);
@@ -80,7 +73,6 @@ int main(int argc, char* argv[]) {
 
     AppLogger::init("ddos_collector.log");
 
-    // Load configuration
     AppConfig config;
     ConfigManager::load("config.json", config);
 
@@ -107,17 +99,14 @@ int main(int argc, char* argv[]) {
 
     parser.process(app);
 
-    // Register meta types
     qRegisterMetaType<DetectionResult>();
     qRegisterMetaType<std::vector<QByteArray>>();
 
-    // List interfaces
     if (parser.isSet("list-interfaces")) {
         AppLogger::get()->info("Available network interfaces:");
         for (const QNetworkInterface& netIface : QNetworkInterface::allInterfaces()) {
             if (netIface.flags().testFlag(QNetworkInterface::IsUp)) {
                 QString ipList;
-                ipList.reserve(netIface.addressEntries().size() * 17);
                 for (const QNetworkAddressEntry& entry : netIface.addressEntries()) {
                     if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol) {
                         if (!ipList.isEmpty()) ipList += ", ";
@@ -125,33 +114,23 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 if (!ipList.isEmpty()) {
-                    // Используем toUtf8().constData() для корректного вывода через AppLogger (spdlog)
                     AppLogger::get()->info("  \"{}\" (IP: {})", 
                         netIface.humanReadableName().toUtf8().constData(), 
                         ipList.toUtf8().constData());
                 }
             }
         }
-
-        AppLogger::get()->info("--- Internal Pcap Interfaces ---");
-        auto ifaces = TrafficMonitor::listInterfaces();
-        for (auto& [name, desc] : ifaces) {
-            AppLogger::get()->info("  {} - {}", name, desc);
-        }
         return 0;
     }
 
-    // Validate required args
     if (!parser.isSet("interface") && !parser.isSet("pcap")) {
         AppLogger::get()->error("Either --interface or --pcap must be specified.");
         parser.showHelp(1);
     }
 
-    // Signal handling
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
-    // Init detection engine
     DetectionEngine engine;
     std::string modelPath = parser.value("model").toStdString();
     std::string ep = parser.value("ep").toStdString();
@@ -161,7 +140,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Init TCP server
     TcpServer tcpServer;
     QString tcpHost = parser.value("tcp-host");
     quint16 tcpPort = parser.value("tcp-port").toUShort();
@@ -171,7 +149,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Init database
     DatabaseManager dbManager;
     bool dbConnected = dbManager.connectToDatabase(
         parser.value("db-host"),
@@ -180,7 +157,6 @@ int main(int argc, char* argv[]) {
         parser.value("db-user"),
         parser.value("db-password"));
 
-    // Stats counters
     uint64_t totalPackets = 0;
     uint64_t attackCount = 0;
     uint64_t benignCount = 0;
@@ -190,16 +166,9 @@ int main(int argc, char* argv[]) {
         if (dbConnected) {
             if (sessionId > 0) {
                 dbManager.closeSession(sessionId, totalPackets, attackCount, benignCount);
-                AppLogger::get()->info("Closed previous session ID: {}. Stats: total={}, attacks={}, benign={}",
-                                       sessionId, totalPackets, attackCount, benignCount);
-
-                // Reset counters for new session
-                totalPackets = 0;
-                attackCount = 0;
-                benignCount = 0;
+                totalPackets = 0; attackCount = 0; benignCount = 0;
             }
             sessionId = dbManager.createSession(iface, model);
-            AppLogger::get()->info("Created new session ID: {}", sessionId);
         }
     };
 
@@ -209,131 +178,151 @@ int main(int argc, char* argv[]) {
             QString::fromStdString(engine.modelInferencer().modelName()));
     }
 
-    auto runReplayMonitor = [&]() {
-        QTimer::singleShot(500, [&]() {
-            QTimer* checkTimer = new QTimer(&app);
-            QObject::connect(checkTimer, &QTimer::timeout, [&, checkTimer]() {
-                if (!engine.isRunning()) {
-                    AppLogger::get()->info("Replay complete. Sending notification.");
-                    auto notifyMsg = Protocol::serializeNotify("replay_done");
-                    tcpServer.broadcast(notifyMsg);
-                    checkTimer->stop();
-                    checkTimer->deleteLater();
-                }
-            });
-            checkTimer->start(1000);
-        });
+    // PCAP Replay State
+    DetectionEngine* replayEngine = nullptr;
+    std::atomic<bool> isReplaying{false};
+    int replaySessionId = -1;
+    std::atomic<uint64_t> replayTotalPackets{0};
+
+    // Incident aggregation state
+    bool inAttack = false;
+    QDateTime attackStartTime;
+    float maxPpsSeen = 0;
+    float totalConf = 0;
+    int samples = 0;
+    std::string attacker = "unknown";
+
+    auto processResultForDb = [&](const DetectionResult& r, int sid) {
+        if (!dbConnected || sid <= 0) return;
+        
+        dbManager.enqueueEvent(r);
+        dbManager.enqueueSnapshot((float)r.pps, totalPackets, r.label, sid);
+
+        // Simple aggregation logic for security incidents
+        if (r.label == 1 && r.confidence > 0.4) {
+            if (!inAttack) {
+                inAttack = true;
+                attackStartTime = r.timestamp.isValid() ? r.timestamp : (QDateTime::currentDateTime)();
+                maxPpsSeen = (float)r.pps;
+                totalConf = r.confidence;
+                samples = 1;
+                attacker = r.topTalkers.empty() ? "unknown" : r.topTalkers[0].first;
+            } else {
+                maxPpsSeen = (std::max)(maxPpsSeen, (float)r.pps);
+                totalConf += r.confidence;
+                samples++;
+            }
+        } else if (inAttack) {
+            // Attack ended or dip in confidence
+            float duration = attackStartTime.secsTo(r.timestamp.isValid() ? r.timestamp : (QDateTime::currentDateTime)());
+            if (duration <= 0) duration = (float)samples; 
+            
+            dbManager.enqueueSecurityEvent(sid, attackStartTime, duration,
+                QString::fromStdString(attacker), maxPpsSeen,
+                QString::fromStdString(r.modelName), totalConf / samples);
+            inAttack = false;
+        }
     };
 
-    // Handle incoming commands
     QObject::connect(&tcpServer, &TcpServer::commandReceived, [&](const std::string& cmd, const nlohmann::json& data) {
         if (cmd == Protocol::CMD_LOAD_PCAP) {
+            std::string action = data.value("action", "");
+            if (action == "stop_replay") {
+                if (isReplaying) {
+                    isReplaying = false;
+                    if (replayEngine) { replayEngine->stop(); delete replayEngine; replayEngine = nullptr; }
+                    if (dbConnected && replaySessionId > 0) {
+                        dbManager.closeSession(replaySessionId, 0, 0, 0);
+                        replaySessionId = -1;
+                    }
+                    auto notifyMsg = Protocol::serializeNotify("live_resumed", {{"session_id", sessionId}});
+                    tcpServer.broadcast(notifyMsg);
+                }
+                return;
+            }
+
             std::string path = data.value("path", "");
             if (!path.empty()) {
-                AppLogger::get()->info("Command: load_pcap '{}'", path);
-                engine.stop();
-                createNewSession(QString::fromStdString(path), 
-                                 QString::fromStdString(engine.modelInferencer().modelName()));
-                if (engine.startReplay(path)) {
-                    runReplayMonitor();
+                AppLogger::get()->info("Replay started for: {}", path);
+                if (replayEngine) { replayEngine->stop(); delete replayEngine; }
+                
+                auto startNotify = Protocol::serializeNotify("replay_started", {{"path", path}});
+                tcpServer.broadcast(startNotify);
+
+                replayEngine = new DetectionEngine();
+                replayEngine->init(modelPath, "", ep);
+                replayTotalPackets = 0;
+
+                if (dbConnected) {
+                    replaySessionId = dbManager.createSession(QString::fromStdString("pcap:" + path), 
+                                                            QString::fromStdString(replayEngine->modelInferencer().modelName()));
+                }
+
+                replayEngine->setResultCallback([&](const DetectionResult& result) {
+                    if (!isReplaying) return;
+                    DetectionResult r = result;
+                    r.sessionId = replaySessionId;
+                    replayTotalPackets += r.totalPackets;
+                    
+                    QByteArray statsMsg = Protocol::serializeStats(r, replayTotalPackets.load());
+                    QMetaObject::invokeMethod(&tcpServer, [&tcpServer, statsMsg]() {
+                        tcpServer.broadcast(statsMsg);
+                    }, Qt::QueuedConnection);
+
+                    processResultForDb(r, replaySessionId);
+                });
+
+                if (replayEngine->startReplay(path)) {
+                    isReplaying = true;
                 }
             }
         } else if (cmd == Protocol::CMD_LOAD_MODEL) {
             std::string path = data.value("path", "");
             if (!path.empty()) {
-                AppLogger::get()->info("Command: load_model '{}'", path);
                 engine.hotSwapModel(path);
+                if (replayEngine) replayEngine->hotSwapModel(path);
             }
-        } else if (cmd == Protocol::CMD_CONFIG_BPF) {
+        } else if (cmd == Protocol::CMD_CONFIG_DUMP) {
             bool enable = data.value("enable", false);
-            engine.setMitigationEnabled(enable);
-            AppLogger::get()->info("Command: config_bpf (Active Mitigation) enabled={}", enable);
+            if (enable) engine.enablePcapDump("pcap_dumps");
+            else engine.disablePcapDump();
         } else if (cmd == Protocol::CMD_STOP) {
-            AppLogger::get()->info("Command: stop");
             g_running = false;
             QCoreApplication::quit();
         }
     });
 
-    // Enable pcap dump if requested
-    if (parser.isSet("pcap-dir")) {
-        engine.enablePcapDump(parser.value("pcap-dir").toStdString());
-    }
-
-    // System metrics
-    SystemMetricsCollector metricsCollector;
-
-    // Detection callback
     engine.setResultCallback([&](const DetectionResult& result) {
         DetectionResult r = result;
         r.sessionId = sessionId;
         totalPackets += r.totalPackets;
+        if (r.label == 1) attackCount++; else benignCount++;
 
-        if (r.label == 1) attackCount++;
-        else benignCount++;
+        if (!isReplaying) {
+            QByteArray statsMsg = Protocol::serializeStats(r, totalPackets);
+            QMetaObject::invokeMethod(&tcpServer, [&tcpServer, statsMsg]() {
+                tcpServer.broadcast(statsMsg);
+            }, Qt::QueuedConnection);
 
-        // Broadcast via TCP
-        QByteArray statsMsg = Protocol::serializeStats(r, totalPackets);
-        QMetaObject::invokeMethod(&tcpServer, [&tcpServer, statsMsg]() {
-            tcpServer.broadcast(statsMsg);
-        }, Qt::QueuedConnection);
-
-        // Periodic snapshot
-        QByteArray snapMsg = Protocol::serializeSnapshot(
-            (float)r.pps, totalPackets, r.label);
-        QMetaObject::invokeMethod(&tcpServer, [&tcpServer, snapMsg]() {
-            tcpServer.broadcast(snapMsg);
-        }, Qt::QueuedConnection);
-
-        // Enqueue to DB
-        if (dbConnected) {
-            dbManager.enqueueEvent(r);
-            dbManager.enqueueSnapshot((float)r.pps, totalPackets, r.label, sessionId);
+            QByteArray snapMsg = Protocol::serializeSnapshot((float)r.pps, totalPackets, r.label);
+            QMetaObject::invokeMethod(&tcpServer, [&tcpServer, snapMsg]() {
+                tcpServer.broadcast(snapMsg);
+            }, Qt::QueuedConnection);
         }
 
-        // Log
-        const char* labelStr = r.label == 1 ? "ATTACK" : "Benign";
-        AppLogger::get()->info("[{}] PPS={:.0f} conf={:.3f} total={} tcp={} udp={} icmp={}",
-            labelStr, r.pps, r.confidence, r.totalPackets,
-            r.tcpPackets, r.udpPackets, r.icmpPackets);
+        processResultForDb(r, sessionId);
     });
 
-    // Incident callback for DB logging
-    engine.setIncidentCallback([&](const QDateTime& start, float dur, const std::string& ip, 
-                                   float ppsMax, const std::string& type, float conf) {
-        if (dbConnected) {
-            dbManager.enqueueSecurityEvent(sessionId, start, dur, 
-                QString::fromStdString(ip), ppsMax, QString::fromStdString(type), conf);
-        }
-    });
-
-    // Start detection
     if (parser.isSet("pcap")) {
-        std::string pcapPath = parser.value("pcap").toStdString();
-        if (!engine.startReplay(pcapPath)) {
-            AppLogger::get()->error("Failed to start pcap replay.");
-            return 1;
-        }
-        runReplayMonitor();
+        engine.startReplay(parser.value("pcap").toStdString());
     } else {
-        std::string rawIface = parser.value("interface").toStdString();
-        std::string iface = resolveNetworkInterface(rawIface);
-        if (!engine.startLive(iface)) {
-            AppLogger::get()->error("Failed to start live capture on interface: {}", rawIface);
-            return 1;
-        }
+        std::string iface = resolveNetworkInterface(parser.value("interface").toStdString());
+        engine.startLive(iface);
     }
 
-    // Run event loop
     int ret = app.exec();
-
-    // Cleanup
     engine.stop();
-    if (dbConnected && sessionId > 0) {
-        dbManager.closeSession(sessionId, totalPackets, attackCount, benignCount);
-    }
-
-    AppLogger::get()->info("Collector stopped. Total={} Attacks={} Benign={}",
-        totalPackets, attackCount, benignCount);
+    if (replayEngine) { replayEngine->stop(); delete replayEngine; }
+    if (dbConnected && sessionId > 0) dbManager.closeSession(sessionId, totalPackets, attackCount, benignCount);
     return ret;
 }

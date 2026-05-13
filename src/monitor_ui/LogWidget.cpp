@@ -14,8 +14,7 @@ LogWidget::LogWidget(QWidget* parent) : QWidget(parent) {
     filterCombo_ = new QComboBox();
     filterCombo_->addItems({"All Events", "Benign Only", "Attack Only"});
     filterCombo_->setFixedWidth(140);
-    filterCombo_->setStyleSheet(QString("QComboBox { background: %1; color: %2; border: 1px solid %3; border-radius: 4px; padding: 4px 8px; }")
-        .arg(ThemePalette::surface0().name(), ThemePalette::text().name(), ThemePalette::surface1().name()));
+    filterCombo_->setToolTip("Фильтрация событий в логе реального времени");
     filterLayout->addWidget(filterCombo_);
     filterLayout->addStretch();
     layout->addLayout(filterLayout);
@@ -29,7 +28,6 @@ LogWidget::LogWidget(QWidget* parent) : QWidget(parent) {
     table_->setShowGrid(false);
     table_->setAlternatingRowColors(true);
     table_->horizontalHeader()->setStretchLastSection(true);
-    table_->setStyleSheet(ThemePalette::tableStyleSheet());
 
     table_->setColumnWidth(0, 130);
     table_->setColumnWidth(1, 200);

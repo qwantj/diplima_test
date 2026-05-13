@@ -5,7 +5,7 @@
 
 struct AppConfig {
     // Collector & Monitor shared
-    std::string collectorHost = "localhost";
+    std::string collectorHost = "127.0.0.1";
     std::string tcpBindHost = "127.0.0.1";
     int tcpPort = 50050;
 

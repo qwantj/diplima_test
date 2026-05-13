@@ -35,9 +35,13 @@ void DataBridge::connectToDatabase(const QString& host, int port,
 }
 
 void DataBridge::sendBpfConfig(bool enable) {
-    nlohmann::json data;
-    data["enable"] = enable;
+    nlohmann::json data; data["enable"] = enable;
     tcpClient_->sendCommand(Protocol::CMD_CONFIG_BPF, data);
+}
+
+void DataBridge::sendDumpConfig(bool enable) {
+    nlohmann::json data; data["enable"] = enable;
+    tcpClient_->sendCommand(Protocol::CMD_CONFIG_DUMP, data);
 }
 
 void DataBridge::onCollectorConnected() {

@@ -8,6 +8,42 @@
 #include <algorithm>
 #include <QHeaderView>
 #include <QStyledItemDelegate>
+#include <QFontMetrics>
+#include <set>
+
+// ====== ColorCheckBox ======
+ColorCheckBox::ColorCheckBox(const QString& label, const QColor& color, QWidget* parent)
+    : QWidget(parent), label_(label), color_(color) {
+    setCursor(Qt::PointingHandCursor);
+    QFontMetrics fm(font());
+    setFixedHeight(22);
+    setMinimumWidth(fm.horizontalAdvance(label) + 26);
+}
+
+void ColorCheckBox::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    // Draw color square
+    QRect sq(0, (height()-12)/2, 12, 12);
+    if (checked_) {
+        p.setBrush(color_);
+        p.setPen(QPen(color_.darker(120), 1));
+    } else {
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(ThemePalette::surface2(), 1.5));
+    }
+    p.drawRoundedRect(sq, 2, 2);
+    // Draw label
+    p.setPen(checked_ ? color_ : ThemePalette::overlay0());
+    QFont f = p.font(); f.setPointSize(10); f.setBold(checked_); p.setFont(f);
+    p.drawText(QRect(17, 0, width()-17, height()), Qt::AlignVCenter, label_);
+}
+
+void ColorCheckBox::mousePressEvent(QMouseEvent*) {
+    checked_ = !checked_;
+    update();
+    emit toggled(checked_);
+}
 
 // ====== HeatmapWidget ======
 HeatmapWidget::HeatmapWidget(QWidget* parent) : QWidget(parent) {
@@ -15,33 +51,87 @@ HeatmapWidget::HeatmapWidget(QWidget* parent) : QWidget(parent) {
 }
 
 void HeatmapWidget::addData(const QDateTime& time, const std::map<uint16_t, uint64_t>& portData) {
+    // Sliding window — храним последние 5 минут
+    QDateTime cutoff = time.addSecs(-300);
+    while (!points_.empty() && points_.front().t < cutoff) points_.pop_front();
+
     uint64_t maxVal = 1;
     for (auto& [p, c] : portData) maxVal = std::max(maxVal, c);
     for (auto& [p, c] : portData) points_.push_back({time, p, (double)c / maxVal});
-    while(points_.size() > 500) points_.pop_front();
-    if(!points_.empty()) { minTime_ = points_.front().t; maxTime_ = points_.back().t; }
+
+    if (!points_.empty()) { 
+        maxTime_ = QDateTime::currentDateTime();
+        minTime_ = maxTime_.addSecs(-300); // Fixed 5 minute window
+    }
     update();
 }
 
 void HeatmapWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    p.fillRect(rect(), ThemePalette::cardBackground());
+    p.fillRect(rect(), ThemePalette::crust());
+
+    const int marginL = 40, marginR = 8, marginT = 6, marginB = 22;
+    QRect plotRect(marginL, marginT, width()-marginL-marginR, height()-marginT-marginB);
+
     if (points_.empty()) {
         p.setPen(ThemePalette::textSecondary());
-        p.drawText(rect(), Qt::AlignCenter, "No heatmap data");
+        p.drawText(plotRect, Qt::AlignCenter, "No heatmap data");
         return;
     }
-    qint64 tRange = std::max((qint64)1, maxTime_.toMSecsSinceEpoch() - minTime_.toMSecsSinceEpoch());
+
+    qint64 tRange = 300000; // 5 minutes in ms
+    qint64 minMs = minTime_.toMSecsSinceEpoch();
+
+    // Collect unique ports for Y axis
+    std::set<uint16_t> portSet;
+    for (auto& pt : points_) portSet.insert(pt.port);
+    std::vector<uint16_t> ports(portSet.rbegin(), portSet.rend()); // desc
+    if (ports.empty()) return;
+
+    int nPorts = std::min((int)ports.size(), 20);
+    double cellH = (double)plotRect.height() / nPorts;
+
     for (auto& pt : points_) {
-        qint64 dt = pt.t.toMSecsSinceEpoch() - minTime_.toMSecsSinceEpoch();
-        int x = 10 + (int)((double)dt / tRange * (width() - 20));
-        int y = 10 + (pt.port % 100) * (height() - 20) / 100;
-        QColor c = ThemePalette::heatmapHigh();
-        c.setAlpha(std::min(255, (int)(pt.intensity * 255)));
-        p.setPen(Qt::NoPen); p.setBrush(c);
-        p.drawEllipse(QPoint(x, y), 3, 3);
+        qint64 dt = pt.t.toMSecsSinceEpoch() - minMs;
+        if (dt < 0) continue; // Skip points outside current window
+
+        int x = plotRect.left() + (int)((double)dt / tRange * plotRect.width());
+        if (x > plotRect.right()) continue; 
+
+        auto it = std::find(ports.begin(), ports.begin()+nPorts, pt.port);
+        if (it == ports.begin()+nPorts) continue;
+        int portIdx = (int)(it - ports.begin());
+        int y = plotRect.top() + (int)(portIdx * cellH);
+
+        // Interpolate colour: blue → yellow → red
+        QColor c;
+        if (pt.intensity < 0.5)
+            c = QColor::fromHsvF(0.6 - pt.intensity*0.4, 0.8, 0.9);
+        else
+            c = QColor::fromHsvF(0.1 - (pt.intensity-0.5)*0.2, 0.9, 1.0);
+        c.setAlpha(180);
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(c);
+        p.drawRoundedRect(x-3, y+2, 7, std::max(3,(int)cellH-4), 2, 2);
     }
+
+    // Y axis labels (port numbers)
+    p.setPen(ThemePalette::textSecondary());
+    QFont f = p.font(); f.setPointSize(8); p.setFont(f);
+    for (int i = 0; i < nPorts; i++) {
+        int y = plotRect.top() + (int)(i * cellH + cellH/2);
+        p.drawText(QRect(0, y-8, marginL-4, 16), Qt::AlignRight|Qt::AlignVCenter,
+                   QString::number(ports[i]));
+    }
+
+    // X axis — time labels
+    p.setPen(ThemePalette::textSecondary());
+    p.drawText(QRect(plotRect.left(), plotRect.bottom()+4, 60, 16),
+               Qt::AlignLeft, minTime_.toString("HH:mm:ss"));
+    p.drawText(QRect(plotRect.right()-60, plotRect.bottom()+4, 60, 16),
+               Qt::AlignRight, maxTime_.toString("HH:mm:ss"));
 }
 
 // ====== NetworkTopologyWidget ======
@@ -50,34 +140,85 @@ NetworkTopologyWidget::NetworkTopologyWidget(QWidget* parent) : QWidget(parent) 
 }
 
 void NetworkTopologyWidget::updateTopology(const std::vector<std::pair<std::string, uint64_t>>& targets, double ingressMbps) {
-    targets_ = targets; if(targets_.size() > 5) targets_.resize(5);
+    // Aggregate by IP (strip port)
+    std::map<std::string, uint64_t> aggregated;
+    for (const auto& t : targets) {
+        QString fullAddr = QString::fromStdString(t.first);
+        std::string ipOnly = fullAddr.section(':', 0, 0).toStdString();
+        aggregated[ipOnly] += t.second;
+    }
+
+    // Convert back to vector and sort by packet count
+    targets_.clear();
+    for (auto const& [ip, count] : aggregated) {
+        targets_.push_back({ip, count});
+    }
+    std::sort(targets_.begin(), targets_.end(), [](const auto& a, const auto& b) {
+        return a.second > b.second;
+    });
+
+    if(targets_.size() > 5) targets_.resize(5);
     ingressMbps_ = ingressMbps; update();
 }
 
 void NetworkTopologyWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    p.fillRect(rect(), ThemePalette::cardBackground());
+    p.fillRect(rect(), ThemePalette::crust());
+
+    QFont titleFont = p.font(); titleFont.setPointSize(10); titleFont.setBold(true);
+    p.setFont(titleFont);
     p.setPen(ThemePalette::textPrimary());
-    p.drawText(QRect(10, 10, width()-20, 20), Qt::AlignCenter, QString("Ingress Traffic: %1 Mbps").arg(ingressMbps_, 0, 'f', 1));
+    p.drawText(QRect(8, 4, width()-16, 22), Qt::AlignCenter,
+               QString("Ingress: %1 Mbps").arg(ingressMbps_, 0, 'f', 2));
+
     if (targets_.empty()) return;
-    int monX = 50, monY = height() / 2;
-    int tarX = width() - 100;
-    int tarYStep = (height() - 40) / targets_.size();
-    p.setBrush(QColor(100, 150, 255)); p.setPen(Qt::NoPen);
-    p.drawEllipse(QPoint(monX, monY), 15, 15);
-    p.setPen(ThemePalette::textSecondary());
-    p.drawText(QRect(monX-20, monY+20, 40, 20), Qt::AlignCenter, "Monitor");
-    for (size_t i = 0; i < targets_.size(); i++) {
-        int ty = 20 + i * tarYStep + tarYStep/2;
-        p.setPen(QPen(QColor(80, 80, 80), 1));
-        p.drawLine(monX+15, monY, tarX-15, ty);
-        p.setPen(ThemePalette::textSecondary());
-        p.drawText(QRect((monX+tarX)/2 - 30, (monY+ty)/2 - 15, 60, 20), Qt::AlignCenter, QString("%1 pkts").arg(targets_[i].second));
-        p.setBrush(ThemePalette::danger()); p.setPen(Qt::NoPen);
-        p.drawEllipse(QPoint(tarX, ty), 10, 10);
+
+    int monX = 40;
+    int monY = (height() + 28) / 2;
+    int tarX = width() - 110;  // Leave space for IP labels on the right
+    int n = (int)targets_.size();
+    int usableH = height() - 36;
+    int tarYStep = n > 0 ? usableH / n : usableH;
+
+    // Monitor node
+    p.setBrush(ThemePalette::sapphire());
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(QPoint(monX, monY), 14, 14);
+
+    QFont nodeFont = p.font(); nodeFont.setPointSize(8); nodeFont.setBold(true);
+    p.setFont(nodeFont);
+    p.setPen(ThemePalette::text());
+    p.drawText(QRect(monX-36, monY+18, 72, 16), Qt::AlignCenter, "Monitor");
+
+    QFont smallFont = p.font(); smallFont.setPointSize(8); smallFont.setBold(false);
+
+    for (int i = 0; i < n; i++) {
+        int ty = 28 + i * tarYStep + tarYStep/2;
+
+        // Line
+        p.setPen(QPen(ThemePalette::surface1(), 1.5));
+        p.drawLine(monX+14, monY, tarX-10, ty);
+
+        // Packet count label mid-line
+        int mx = (monX + tarX) / 2;
+        int my = (monY + ty) / 2;
+        p.setFont(smallFont);
+        p.setPen(ThemePalette::subtext0());
+        p.drawText(QRect(mx-30, my-10, 60, 16), Qt::AlignCenter,
+                   QString("%1 p").arg(targets_[i].second));
+
+        // Target node
+        p.setPen(Qt::NoPen);
+        p.setBrush(ThemePalette::danger());
+        p.drawEllipse(QPoint(tarX, ty), 8, 8);
+
+        // IP label — right of target circle (strip port if exists)
+        p.setFont(nodeFont);
         p.setPen(ThemePalette::textPrimary());
-        p.drawText(QRect(tarX-40, ty+15, 80, 20), Qt::AlignCenter, QString::fromStdString(targets_[i].first));
+        QString fullAddr = QString::fromStdString(targets_[i].first);
+        QString ipOnly = fullAddr.section(':', 0, 0); 
+        p.drawText(QRect(tarX + 12, ty - 10, 100, 20), Qt::AlignLeft | Qt::AlignVCenter, ipOnly);
     }
 }
 
@@ -114,10 +255,30 @@ InteractiveChartView::InteractiveChartView(QChart* chart, QWidget* parent)
     setMouseTracking(true);
 }
 
+// Clamp Y axis of all QValueAxis to >= 0
+static void clampAxesAboveZero(QChart* chart) {
+    for (auto* ax : chart->axes(Qt::Vertical)) {
+        auto* vax = qobject_cast<QValueAxis*>(ax);
+        if (vax && vax->min() < 0.0) {
+            qreal span = vax->max() - vax->min();
+            vax->setRange(0.0, std::max(1.0, span));
+        }
+    }
+}
+
 void InteractiveChartView::wheelEvent(QWheelEvent* event) {
     emit userInteracted();
     qreal factor = event->angleDelta().y() > 0 ? 1.1 : 0.9;
-    chart()->zoom(factor); event->accept();
+    
+    QRectF r = chart()->plotArea();
+    qreal newWidth = r.width() / factor;
+    qreal centerX = r.center().x();
+    r.setLeft(centerX - newWidth / 2.0);
+    r.setRight(centerX + newWidth / 2.0);
+    chart()->zoomIn(r);
+    
+    clampAxesAboveZero(chart());
+    event->accept();
 }
 
 void InteractiveChartView::mousePressEvent(QMouseEvent* event) {
@@ -136,7 +297,9 @@ void InteractiveChartView::mouseReleaseEvent(QMouseEvent* event) {
 void InteractiveChartView::mouseMoveEvent(QMouseEvent* event) {
     if (dragging_) {
         QPointF delta = event->position() - lastMousePos_;
-        chart()->scroll(-delta.x(), delta.y()); lastMousePos_ = event->position();
+        chart()->scroll(-delta.x(), delta.y());
+        clampAxesAboveZero(chart());
+        lastMousePos_ = event->position();
         event->accept();
     } else {
         emit mouseMoved(event->pos());
@@ -268,13 +431,13 @@ void DashboardWidget::setupDashboard() {
     // Helper to create a stylized card
     auto createCard = [](QWidget* parent = nullptr) {
         auto* card = new QFrame(parent);
-        card->setStyleSheet(ThemePalette::cardStyleSheet());
+        card->setProperty("cssClass", "dashboardCard");
         return card;
     };
 
     // Title label
     auto* titleLabel = new QLabel("Overview (Global State)");
-    titleLabel->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: bold; background: transparent;").arg(ThemePalette::text().name()));
+    titleLabel->setProperty("cssClass", "overviewTitle");
     mainGridLayout->addWidget(titleLabel, 0, 0, 1, 3);
 
     // 1. Overview Status Bar (single horizontal row)
@@ -285,25 +448,29 @@ void DashboardWidget::setupDashboard() {
     overviewLayout->setContentsMargins(5, 0, 5, 0);
     overviewLayout->setSpacing(15);
 
-    auto createStatusLabel = [](const QString& text, const QColor& color) {
+    auto createStatusLabel = [](const QString& text, const QString& cssClass) {
         auto* lbl = new QLabel(text);
-        lbl->setStyleSheet(QString("color: %1; font-size: 12px; font-weight: bold; background: transparent;").arg(color.name()));
+        lbl->setProperty("cssClass", cssClass);
         return lbl;
     };
 
-    lblCollector_ = createStatusLabel("Collector: Disconnected", ThemePalette::red());
-    lblTotalPackets_ = createStatusLabel("Total Packets: 0", ThemePalette::text());
-    lblPps_ = createStatusLabel("Current PPS: 0.0", ThemePalette::text());
-    lblDropRate_ = createStatusLabel("Drop Rate: 0.0 pps", ThemePalette::peach());
-    lblSources_ = createStatusLabel("Sources: 0", ThemePalette::text());
+    lblCollector_ = createStatusLabel("Collector: Disconnected", "statusLabelRed");
+    lblTotalPackets_ = createStatusLabel("Total Packets: 0", "statusLabelText");
+    lblPps_ = createStatusLabel("Current PPS: 0.0", "statusLabelText");
+    lblDropRate_ = createStatusLabel("Drop Rate: 0.0 pps", "statusLabelPeach");
+    lblSources_ = createStatusLabel("Sources: 0", "statusLabelText");
     
     bpfCheckbox_ = new QCheckBox("Auto-Block Top-IP (Firewall)");
-    bpfCheckbox_->setStyleSheet(QString("QCheckBox { color: %1; font-size: 12px; font-weight: bold; background: transparent; }").arg(ThemePalette::text().name()));
+    bpfCheckbox_->setProperty("cssClass", "dashboardCheckbox");
     connect(bpfCheckbox_, &QCheckBox::toggled, this, &DashboardWidget::bpfToggled);
 
-    lblModel_ = createStatusLabel("\u25CF rf_model.onnx", ThemePalette::text());
-    lblProbability_ = createStatusLabel("Probability: 0.0%", ThemePalette::green());
-    lblStatus_ = createStatusLabel("\u2714 Normal Traffic", ThemePalette::green());
+    auto* pcapCheckbox = new QCheckBox("Save PCAP Dumps");
+    pcapCheckbox->setProperty("cssClass", "dashboardCheckbox");
+    connect(pcapCheckbox, &QCheckBox::toggled, this, &DashboardWidget::pcapToggled);
+
+    lblModel_ = createStatusLabel("\u25CF rf_model.onnx", "statusLabelText");
+    lblProbability_ = createStatusLabel("Probability: 0.0%", "statusLabelGreen");
+    lblStatus_ = createStatusLabel("\u2714 Normal Traffic", "statusLabelGreen");
 
     overviewLayout->addWidget(lblCollector_);
     overviewLayout->addWidget(lblTotalPackets_);
@@ -329,25 +496,24 @@ void DashboardWidget::setupDashboard() {
     legendLayout->setSpacing(15);
     
     auto* chartTitle = new QLabel("Traffic Rate & Attack Confidence");
-    chartTitle->setStyleSheet(QString("color: %1; font-size: 14px; font-weight: bold; border: none; background: transparent;").arg(ThemePalette::text().name()));
+    chartTitle->setProperty("cssClass", "chartTitle");
     legendLayout->addWidget(chartTitle);
     legendLayout->addStretch();
 
-    auto createLayerCb = [&](const QString& text, const QColor& color, QCheckBox*& cb) {
-        cb = new QCheckBox(text); cb->setChecked(true);
-        cb->setStyleSheet(QString("QCheckBox { color: %1; font-weight: bold; font-size: 11px; border: none; background: transparent; }").arg(color.name()));
+    auto createLayerCb = [&](const QString& text, const QColor& color, ColorCheckBox*& cb) {
+        cb = new ColorCheckBox(text, color);
         legendLayout->addWidget(cb);
     };
     
-    createLayerCb("PPS", ThemePalette::sapphire(), cbPps_);
-    createLayerCb("Other", ThemePalette::subtext0(), cbOther_);
-    createLayerCb("ICMP", ThemePalette::red(), cbIcmp_);
-    createLayerCb("UDP", ThemePalette::yellow(), cbUdp_);
-    createLayerCb("TCP", ThemePalette::green(), cbTcp_);
-    createLayerCb("Confidence %", ThemePalette::peach(), cbConf_);
+    createLayerCb("PPS",        ThemePalette::sapphire(), cbPps_);
+    createLayerCb("Other",      ThemePalette::mauve(),    cbOther_);
+    createLayerCb("ICMP",       ThemePalette::red(),      cbIcmp_);
+    createLayerCb("UDP",        ThemePalette::yellow(),   cbUdp_);
+    createLayerCb("TCP",        ThemePalette::green(),    cbTcp_);
+    createLayerCb("Confidence", ThemePalette::peach(),    cbConf_);
     
     resetBtn_ = new QPushButton("Reset Zoom");
-    resetBtn_->setStyleSheet(ThemePalette::buttonStyleSheet());
+    resetBtn_->setToolTip("Сбросить масштаб графика до исходного (двойной клик по графику)");
     legendLayout->addWidget(resetBtn_);
 
     chartCardLayout->addLayout(legendLayout);
@@ -359,27 +525,41 @@ void DashboardWidget::setupDashboard() {
     ppsChart_->setMargins(QMargins(0,0,0,0));
     
     zeroSeries_ = new QLineSeries();
-    
-    ppsSeries_ = new QLineSeries(); 
-    ppsArea_ = new QAreaSeries(ppsSeries_, zeroSeries_);
-    ppsArea_->setName("PPS"); ppsArea_->setColor(ThemePalette::sapphire()); ppsArea_->setOpacity(0.2);
+    zeroSeries_->setPen(QPen(Qt::transparent));
+
+    // Настраиваем стили area-серий: полупрозрачная заливка + линия под цвет
+    auto makeArea = [](QLineSeries* upper, QLineSeries* lower,
+                       const QString& name, const QColor& c) -> QAreaSeries* {
+        auto* area = new QAreaSeries(upper, lower);
+        area->setName(name);
+        QColor fill = c; fill.setAlpha(80);
+        area->setBrush(fill);
+        QPen pen(c, 2); area->setPen(pen);
+        upper->setPen(QPen(c, 2));
+        return area;
+    };
+
+    ppsSeries_ = new QLineSeries();
+    ppsArea_  = makeArea(ppsSeries_, zeroSeries_, "PPS", ThemePalette::sapphire());
 
     otherSeries_ = new QLineSeries();
-    otherArea_ = new QAreaSeries(otherSeries_, zeroSeries_);
-    otherArea_->setName("Other"); otherArea_->setColor(ThemePalette::mauve()); otherArea_->setOpacity(0.3);
-    
-    tcpUpper_ = new QLineSeries();   tcpArea_ = new QAreaSeries(tcpUpper_, zeroSeries_);
-    udpUpper_ = new QLineSeries();   udpArea_ = new QAreaSeries(udpUpper_, tcpUpper_);
-    icmpUpper_ = new QLineSeries();  icmpArea_ = new QAreaSeries(icmpUpper_, udpUpper_);
-    
+    otherArea_   = makeArea(otherSeries_, zeroSeries_, "Other", ThemePalette::mauve());
+
+    tcpUpper_  = new QLineSeries();
+    udpUpper_  = new QLineSeries();
+    icmpUpper_ = new QLineSeries();
+    tcpArea_   = makeArea(tcpUpper_,  zeroSeries_, "TCP",  ThemePalette::green());
+    udpArea_   = makeArea(udpUpper_,  tcpUpper_,   "UDP",  ThemePalette::yellow());
+    icmpArea_  = makeArea(icmpUpper_, udpUpper_,   "ICMP", ThemePalette::red());
+
     attackConfidenceUpper_ = new QLineSeries();
     attackConfidenceUpper_->setName("Attack Confidence");
     QPen dashPen(ThemePalette::peach());
-    dashPen.setWidth(2);
+    dashPen.setWidth(2.5);
     dashPen.setStyle(Qt::DashLine);
     attackConfidenceUpper_->setPen(dashPen);
-    
-    // Z-Order: Areas at bottom, lines on top
+
+    // Z-Order: Areas at bottom, confidence line on top
     ppsChart_->addSeries(ppsArea_);
     ppsChart_->addSeries(otherArea_);
     ppsChart_->addSeries(tcpArea_);
@@ -405,13 +585,13 @@ void DashboardWidget::setupDashboard() {
     icmpArea_->attachAxis(timeAxis_); icmpArea_->attachAxis(ppsAxis_);
     attackConfidenceUpper_->attachAxis(timeAxis_); attackConfidenceUpper_->attachAxis(confAxis_);
     
-    connect(cbPps_, &QCheckBox::toggled, ppsArea_, &QAreaSeries::setVisible);
-    connect(cbTcp_, &QCheckBox::toggled, tcpArea_, &QAreaSeries::setVisible);
-    connect(cbUdp_, &QCheckBox::toggled, udpArea_, &QAreaSeries::setVisible);
-    connect(cbIcmp_, &QCheckBox::toggled, icmpArea_, &QAreaSeries::setVisible);
-    connect(cbOther_, &QCheckBox::toggled, otherArea_, &QAreaSeries::setVisible);
-    connect(cbConf_, &QCheckBox::toggled, attackConfidenceUpper_, &QLineSeries::setVisible);
-    connect(resetBtn_, &QPushButton::clicked, this, &DashboardWidget::resetZoom);
+    connect(cbPps_,   &ColorCheckBox::toggled, ppsArea_,               &QAreaSeries::setVisible);
+    connect(cbTcp_,   &ColorCheckBox::toggled, tcpArea_,               &QAreaSeries::setVisible);
+    connect(cbUdp_,   &ColorCheckBox::toggled, udpArea_,               &QAreaSeries::setVisible);
+    connect(cbIcmp_,  &ColorCheckBox::toggled, icmpArea_,              &QAreaSeries::setVisible);
+    connect(cbOther_, &ColorCheckBox::toggled, otherArea_,             &QAreaSeries::setVisible);
+    connect(cbConf_,  &ColorCheckBox::toggled, attackConfidenceUpper_, &QLineSeries::setVisible);
+    connect(resetBtn_, &QPushButton::clicked,  this, &DashboardWidget::resetZoom);
     
     ppsChartView_ = new InteractiveChartView(ppsChart_, chartCard);
     ppsChartView_->setRenderHint(QPainter::Antialiasing);
@@ -450,15 +630,20 @@ void DashboardWidget::setupDashboard() {
         return card;
     };
 
-    mainGridLayout->addWidget(createDonutCard(cpuChart_, cpuPie_, cpuView_, cpuTitle_, "CPU Usage"), 3, 0);
-    mainGridLayout->addWidget(createDonutCard(ramChart_, ramPie_, ramView_, ramTitle_, "RAM Usage"), 3, 1);
+    mainGridLayout->addWidget(createDonutCard(cpuChart_,     cpuPie_,     cpuView_,     cpuTitle_,     "CPU Usage"),     3, 0);
+    mainGridLayout->addWidget(createDonutCard(ramChart_,     ramPie_,     ramView_,     ramTitle_,     "RAM Usage"),     3, 1);
     mainGridLayout->addWidget(createDonutCard(trafficChart_, trafficPie_, trafficView_, trafficTitle_, "Traffic Ratio"), 3, 2);
     mainGridLayout->setRowStretch(3, 2);
     
+    // Donut — holeSize 0.55 чтобы кольцо было шире
+    cpuPie_->setHoleSize(0.55);     cpuPie_->setPieSize(0.85);
+    ramPie_->setHoleSize(0.55);     ramPie_->setPieSize(0.85);
+    trafficPie_->setHoleSize(0.55); trafficPie_->setPieSize(0.85);
+    
     cpuPie_->append("In Use", 0)->setBrush(ThemePalette::red());
-    cpuPie_->append("Free", 100)->setBrush(ThemePalette::green());
+    cpuPie_->append("Free", 100)->setBrush(ThemePalette::surface0());
     ramPie_->append("In Use", 0)->setBrush(ThemePalette::peach());
-    ramPie_->append("Free", 100)->setBrush(ThemePalette::green());
+    ramPie_->append("Free", 100)->setBrush(ThemePalette::surface0());
     trafficPie_->append("Normal", 1)->setBrush(ThemePalette::green());
     trafficPie_->append("Attack", 0)->setBrush(ThemePalette::red());
 
@@ -471,65 +656,131 @@ void DashboardWidget::setupAnalytics() {
 
     // Title label
     auto* titleLabel = new QLabel("Infrastructure Health");
-    titleLabel->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: bold; background: transparent; padding: 5px;").arg(ThemePalette::text().name()));
+    titleLabel->setProperty("cssClass", "overviewTitle");
     layout->addWidget(titleLabel);
 
     auto* topLayout = new QHBoxLayout();
     auto* healthGrp = new QGroupBox("Global SLO Health (Last points)");
-    healthGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* hL = new QVBoxLayout(healthGrp); sloHealth_ = new AlertGridWidget(); hL->addWidget(sloHealth_);
     topLayout->addWidget(healthGrp, 1);
     auto* topGrp = new QGroupBox("Network Topology");
-    topGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* tL = new QVBoxLayout(topGrp); topologyWidget_ = new NetworkTopologyWidget(); tL->addWidget(topologyWidget_);
     topLayout->addWidget(topGrp, 2);
     layout->addLayout(topLayout, 1);
     auto* midLayout = new QHBoxLayout();
 
     auto setupTable = [](QTableWidget*& t, const QStringList& headers, bool useProgress = false) {
-        t = new QTableWidget(); t->setColumnCount(headers.size()); t->setHorizontalHeaderLabels(headers);
-        t->verticalHeader()->setVisible(false); t->horizontalHeader()->setStretchLastSection(true);
-        t->setEditTriggers(QAbstractItemView::NoEditTriggers); t->setSelectionBehavior(QAbstractItemView::SelectRows);
+        t = new QTableWidget();
+        t->setColumnCount(headers.size());
+        t->setHorizontalHeaderLabels(headers);
+        t->verticalHeader()->setVisible(false);
+        
+        // Auto-resize columns to contents
+        t->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+        t->horizontalHeader()->setStretchLastSection(true);
+        
+        t->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        t->setSelectionBehavior(QAbstractItemView::SelectRows);
+        t->setSelectionMode(QAbstractItemView::SingleSelection);
         t->setAlternatingRowColors(true);
         t->setShowGrid(false);
-        t->setStyleSheet(ThemePalette::tableStyleSheet());
-        if (useProgress) t->setItemDelegate(new ProgressDelegate(t));
+        t->setSortingEnabled(true);
+        
+        if (useProgress) {
+            t->setItemDelegate(new ProgressDelegate(t));
+        }
     };
 
-    setupTable(tableSources_, {"#", "IP Addr", "Packets"}, true); midLayout->addWidget(tableSources_, 1);
-    setupTable(tableTargets_, {"#", "Target (IP:Port)", "Packets"}); midLayout->addWidget(tableTargets_, 1);
+    setupTable(tableSources_, {"#", "IP Addr", "Packets"}, true);
+    midLayout->addWidget(tableSources_, 1);
+    setupTable(tableTargets_, {"#", "Target (IP:Port)", "Packets"});
+    midLayout->addWidget(tableTargets_, 1);
     
     auto* portsGrp = new QGroupBox("Top Active Ports");
-    portsGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
     auto* pL = new QVBoxLayout(portsGrp);
     topPortsChart_ = new QChart(); topPortsChart_->setBackgroundBrush(Qt::transparent);
-    topPortsChart_->legend()->setAlignment(Qt::AlignBottom); topPortsChart_->legend()->setLabelBrush(QBrush(ThemePalette::subtext0()));
-    topPortsPie_ = new QPieSeries(); topPortsPie_->setHoleSize(0.4); topPortsChart_->addSeries(topPortsPie_);
-    auto* pv = new QChartView(topPortsChart_); pv->setRenderHint(QPainter::Antialiasing); pL->addWidget(pv);
+    topPortsChart_->legend()->setAlignment(Qt::AlignBottom);
+    topPortsChart_->legend()->setLabelBrush(QBrush(ThemePalette::subtext0()));
+    topPortsPie_ = new QPieSeries(); topPortsPie_->setHoleSize(0.4);
+    topPortsChart_->addSeries(topPortsPie_);
+    auto* pv = new QChartView(topPortsChart_);
+    pv->setRenderHint(QPainter::Antialiasing);
+    pv->setStyleSheet("background: transparent; border: none;");
+    pL->addWidget(pv);
     midLayout->addWidget(portsGrp, 1);
     layout->addLayout(midLayout, 2);
+
     auto* botLayout = new QHBoxLayout();
-    auto* bwGrp = new QGroupBox("Network Bandwidth"); bwGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
-    auto* bL = new QVBoxLayout(bwGrp); bandwidthChart_ = new QChart(); bandwidthChart_->setBackgroundBrush(Qt::transparent);
-    bandwidthChart_->legend()->hide(); bandwidthSeries_ = new QLineSeries(); bandwidthSeries_->setPen(QPen(ThemePalette::sapphire(), 2));
-    bandwidthChart_->addSeries(bandwidthSeries_); bwTimeAxis_ = new QDateTimeAxis(); bwTimeAxis_->setFormat("HH:mm");
+
+    // Network Bandwidth — с area-заливкой под линию (п.7)
+    auto* bwGrp = new QGroupBox("Network Bandwidth");
+    auto* bL = new QVBoxLayout(bwGrp);
+    bandwidthChart_ = new QChart();
+    bandwidthChart_->setBackgroundBrush(ThemePalette::crust());
+    bandwidthChart_->legend()->hide();
+    bandwidthChart_->setMargins(QMargins(0,0,0,0));
+
+    bandwidthSeries_ = new QLineSeries();
+    bandwidthSeries_->setPen(QPen(ThemePalette::sapphire(), 2));
+
+    auto* bwArea = new QAreaSeries(bandwidthSeries_);
+    QColor bwFill = ThemePalette::sapphire(); bwFill.setAlpha(60);
+    bwArea->setBrush(bwFill); bwArea->setPen(QPen(ThemePalette::sapphire(), 2));
+    bandwidthChart_->addSeries(bwArea);
+
+    bwTimeAxis_ = new QDateTimeAxis(); bwTimeAxis_->setFormat("HH:mm:ss");
+    bwTimeAxis_->setLabelsColor(ThemePalette::textSecondary());
+    bwTimeAxis_->setGridLineColor(ThemePalette::surface0());
     bwAxis_ = new QValueAxis(); bwAxis_->setTitleText("Mbps");
-    bandwidthChart_->addAxis(bwTimeAxis_, Qt::AlignBottom); bandwidthChart_->addAxis(bwAxis_, Qt::AlignLeft);
-    bandwidthSeries_->attachAxis(bwTimeAxis_); bandwidthSeries_->attachAxis(bwAxis_);
-    auto* bv = new QChartView(bandwidthChart_); bv->setRenderHint(QPainter::Antialiasing); bL->addWidget(bv);
+    bwAxis_->setLabelsColor(ThemePalette::textSecondary());
+    bwAxis_->setGridLineColor(ThemePalette::surface0());
+    bandwidthChart_->addAxis(bwTimeAxis_, Qt::AlignBottom);
+    bandwidthChart_->addAxis(bwAxis_, Qt::AlignLeft);
+    bwArea->attachAxis(bwTimeAxis_); bwArea->attachAxis(bwAxis_);
+    // bandwidthSeries_ needs axes too for data insertion
+    bandwidthSeries_->attachAxis(bwTimeAxis_);
+    bandwidthSeries_->attachAxis(bwAxis_);
+
+    auto* bv = new QChartView(bandwidthChart_);
+    bv->setRenderHint(QPainter::Antialiasing);
+    bv->setStyleSheet("background: transparent; border: none;");
+    bL->addWidget(bv);
     botLayout->addWidget(bwGrp, 1);
-    auto* hmGrp = new QGroupBox("Port Activity Heatmap"); hmGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
-    auto* hmL = new QVBoxLayout(hmGrp); heatmapWidget_ = new HeatmapWidget(); hmL->addWidget(heatmapWidget_);
+
+    auto* hmGrp = new QGroupBox("Port Activity Heatmap");
+    auto* hmL = new QVBoxLayout(hmGrp);
+    heatmapWidget_ = new HeatmapWidget();
+    hmL->addWidget(heatmapWidget_);
     botLayout->addWidget(hmGrp, 1);
-    auto* sizeGrp = new QGroupBox("Packet Size Distribution"); sizeGrp->setStyleSheet(QString("color: %1; font-weight: bold;").arg(ThemePalette::text().name()));
-    auto* sL = new QVBoxLayout(sizeGrp); packetSizeChart_ = new QChart(); packetSizeChart_->setBackgroundBrush(Qt::transparent);
-    packetSizeChart_->legend()->hide(); packetSizeSeries_ = new QBarSeries(); packetSizeSet_ = new QBarSet("Count");
-    packetSizeSet_->setColor(ThemePalette::sapphire()); packetSizeSeries_->append(packetSizeSet_);
-    packetSizeChart_->addSeries(packetSizeSeries_); sizeCatAxis_ = new QBarCategoryAxis();
-    sizeCatAxis_->append({"0-64B", "65-128B", "129-512B", "513-1024B", ">1024B"}); sizeValAxis_ = new QValueAxis();
-    packetSizeChart_->addAxis(sizeCatAxis_, Qt::AlignBottom); packetSizeChart_->addAxis(sizeValAxis_, Qt::AlignLeft);
-    packetSizeSeries_->attachAxis(sizeCatAxis_); packetSizeSeries_->attachAxis(sizeValAxis_);
-    auto* sv = new QChartView(packetSizeChart_); sv->setRenderHint(QPainter::Antialiasing); sL->addWidget(sv);
+
+    // Packet Size Distribution — п.5: инициализируем 5 нулями
+    auto* sizeGrp = new QGroupBox("Packet Size Distribution");
+    auto* sL = new QVBoxLayout(sizeGrp);
+    packetSizeChart_ = new QChart();
+    packetSizeChart_->setBackgroundBrush(ThemePalette::crust()); // п.7
+    packetSizeChart_->legend()->hide();
+    packetSizeChart_->setMargins(QMargins(0,0,0,0));
+    packetSizeSeries_ = new QBarSeries();
+    packetSizeSet_ = new QBarSet("Count");
+    packetSizeSet_->setColor(ThemePalette::sapphire());
+    // п.5: добавляем 5 нулевых значений, чтобы replace() работал
+    *packetSizeSet_ << 0.0 << 0.0 << 0.0 << 0.0 << 0.0;
+    packetSizeSeries_->append(packetSizeSet_);
+    packetSizeChart_->addSeries(packetSizeSeries_);
+    sizeCatAxis_ = new QBarCategoryAxis();
+    sizeCatAxis_->append({"0-64", "65-128", "129-512", "513-1k", ">1k"});
+    sizeCatAxis_->setLabelsColor(ThemePalette::textSecondary());
+    sizeValAxis_ = new QValueAxis();
+    sizeValAxis_->setLabelsColor(ThemePalette::textSecondary());
+    sizeValAxis_->setGridLineColor(ThemePalette::surface0());
+    packetSizeChart_->addAxis(sizeCatAxis_, Qt::AlignBottom);
+    packetSizeChart_->addAxis(sizeValAxis_, Qt::AlignLeft);
+    packetSizeSeries_->attachAxis(sizeCatAxis_);
+    packetSizeSeries_->attachAxis(sizeValAxis_);
+    auto* sv = new QChartView(packetSizeChart_);
+    sv->setRenderHint(QPainter::Antialiasing);
+    sv->setStyleSheet("background: transparent; border: none;");
+    sL->addWidget(sv);
     botLayout->addWidget(sizeGrp, 1);
     layout->addLayout(botLayout, 2);
 }
@@ -572,6 +823,20 @@ void DashboardWidget::applyTheme(ThemeMode mode) {
     timeAxis_->setLabelsColor(ThemePalette::textSecondary());
     ppsAxis_->setLabelsColor(ThemePalette::textSecondary());
     confAxis_->setLabelsColor(ThemePalette::textSecondary());
+    
+    if (bwTimeAxis_) bwTimeAxis_->setLabelsColor(ThemePalette::textSecondary());
+    if (bwAxis_) bwAxis_->setLabelsColor(ThemePalette::textSecondary());
+    if (sizeCatAxis_) sizeCatAxis_->setLabelsColor(ThemePalette::textSecondary());
+    if (sizeValAxis_) sizeValAxis_->setLabelsColor(ThemePalette::textSecondary());
+    
+    if (bandwidthChart_) bandwidthChart_->setBackgroundBrush(ThemePalette::crust());
+    if (packetSizeChart_) packetSizeChart_->setBackgroundBrush(ThemePalette::crust());
+    
+    if (bandwidthSeries_) bandwidthSeries_->setPen(QPen(ThemePalette::sapphire(), 2));
+    if (packetSizeSet_) packetSizeSet_->setColor(ThemePalette::sapphire());
+    
+    // Also re-apply the global style to widgets because properties changed
+    qApp->setStyleSheet(ThemePalette::globalStyleSheet());
 }
 
 void DashboardWidget::resetZoom() { ppsChart_->zoomReset(); userInteracting_ = false; }
@@ -666,7 +931,9 @@ void DashboardWidget::addDataPoint(const DetectionResult& result) {
     
     otherSeries_->append(ms, otherVal);
     attackConfidenceUpper_->append(ms, result.confidence * 100.0);
-    bandwidthSeries_->append(ms, (result.totalBytes * 8.0) / 1000000.0 / dt);
+    
+    double bwVal = (result.totalBytes * 8.0) / 1000000.0 / dt;
+    bandwidthSeries_->append(ms, bwVal);
     
     timeHistory_.push_back(t);
     while (timeHistory_.size() > MAX_CHART_POINTS) {
@@ -715,7 +982,7 @@ void DashboardWidget::addDataPoint(const DetectionResult& result) {
                 maxVisibleBw = std::max(maxVisibleBw, p.y());
             }
         }
-        bwAxis_->setRange(0, std::max(1.0, maxVisibleBw * 1.15));
+        bwAxis_->setRange(0, std::max(0.05, maxVisibleBw * 1.15));
     }
 }
 

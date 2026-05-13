@@ -11,40 +11,50 @@ void ThemePalette::apply(ThemeMode mode) {
 
     QPalette pal;
     if (mode == ThemeMode::Dark) {
-        // Catppuccin Mocha
-        pal.setColor(QPalette::Window,          base());
-        pal.setColor(QPalette::WindowText,      text());
-        pal.setColor(QPalette::Base,            mantle());
-        pal.setColor(QPalette::AlternateBase,   QColor(0x24, 0x24, 0x37)); // #242437
+        // Catppuccin Mocha — все фоны строго тёмные
+        pal.setColor(QPalette::Window,          base());        // #1e1e2e
+        pal.setColor(QPalette::WindowText,      text());        // #cdd6f4
+        pal.setColor(QPalette::Base,            crust());       // #11111b — основной фон таблиц
+        pal.setColor(QPalette::AlternateBase,   mantle());      // #181825 — чередование строк
         pal.setColor(QPalette::ToolTipBase,     surface1());
         pal.setColor(QPalette::ToolTipText,     text());
         pal.setColor(QPalette::Text,            text());
         pal.setColor(QPalette::Button,          surface0());
         pal.setColor(QPalette::ButtonText,      text());
         pal.setColor(QPalette::Link,            blue());
-        pal.setColor(QPalette::Highlight,       surface1());
+        // Мягкое выделение — не кричащее
+        pal.setColor(QPalette::Highlight,       QColor(0x31, 0x32, 0x44)); // surface0
         pal.setColor(QPalette::HighlightedText, text());
+        pal.setColor(QPalette::Mid,             surface0());
+        pal.setColor(QPalette::Dark,            crust());
+        pal.setColor(QPalette::Shadow,          QColor(0x09, 0x09, 0x12));
     }
     else if (mode == ThemeMode::Light) {
-        // Catppuccin Latte
-        pal.setColor(QPalette::Window,          QColor(0xef, 0xf1, 0xf5)); // Latte Base
+        // Catppuccin Latte — полноценная светлая тема
+        pal.setColor(QPalette::Window,          QColor(0xef, 0xf1, 0xf5)); // Latte Base #eff1f5
         pal.setColor(QPalette::WindowText,      QColor(0x4c, 0x4f, 0x69)); // Latte Text
         pal.setColor(QPalette::Base,            QColor(0xe6, 0xe9, 0xef)); // Latte Mantle
         pal.setColor(QPalette::AlternateBase,   QColor(0xdc, 0xe0, 0xe8)); // Latte Crust
-        pal.setColor(QPalette::ToolTipBase,     QColor(0xcc, 0xd0, 0xda)); // Latte Surface0
+        pal.setColor(QPalette::ToolTipBase,     QColor(0xcc, 0xd0, 0xda));
         pal.setColor(QPalette::ToolTipText,     QColor(0x4c, 0x4f, 0x69));
         pal.setColor(QPalette::Text,            QColor(0x4c, 0x4f, 0x69));
         pal.setColor(QPalette::Button,          QColor(0xcc, 0xd0, 0xda));
         pal.setColor(QPalette::ButtonText,      QColor(0x4c, 0x4f, 0x69));
-        pal.setColor(QPalette::Link,            QColor(0x1e, 0x66, 0xf5)); // Latte Blue
+        pal.setColor(QPalette::Link,            QColor(0x1e, 0x66, 0xf5));
         pal.setColor(QPalette::Highlight,       QColor(0xac, 0xb0, 0xbe)); // Latte Surface1
         pal.setColor(QPalette::HighlightedText, QColor(0x4c, 0x4f, 0x69));
+        pal.setColor(QPalette::Mid,             QColor(0xcc, 0xd0, 0xda));
+        pal.setColor(QPalette::Dark,            QColor(0xdc, 0xe0, 0xe8));
+        pal.setColor(QPalette::Shadow,          QColor(0xbc, 0xc0, 0xcc));
     }
     else {
         pal = QApplication::style()->standardPalette();
     }
 
     QApplication::setPalette(pal);
+
+    // Применяем глобальный QSS для полного покрытия виджетов
+    qApp->setStyleSheet(globalStyleSheet());
 }
 
 ThemeMode ThemePalette::current() { return currentMode_; }
@@ -117,11 +127,11 @@ QColor ThemePalette::chartTcp()    { return green(); }       // #a6e3a1
 QColor ThemePalette::chartUdp()    { return yellow(); }      // #f9e2af
 QColor ThemePalette::chartIcmp()   { return red(); }         // #f38ba8
 QColor ThemePalette::chartPps()    { return sapphire(); }    // #74c7ec
-QColor ThemePalette::chartOther()  { return subtext0(); }    // #a6adc8
+QColor ThemePalette::chartOther()  { return mauve(); }       // #cba6f7
 
 // UI semantic
-QColor ThemePalette::background()     { return crust(); }
-QColor ThemePalette::cardBackground() { return base(); }
+QColor ThemePalette::background()     { return crust(); }    // Самый тёмный фон
+QColor ThemePalette::cardBackground() { return base(); }     // Фон карточек
 QColor ThemePalette::textPrimary()    { return text(); }
 QColor ThemePalette::textSecondary()  { return subtext0(); }
 QColor ThemePalette::accent()         { return green(); }
@@ -130,9 +140,9 @@ QColor ThemePalette::warning()        { return peach(); }
 QColor ThemePalette::success()        { return green(); }
 
 // Heatmap
-QColor ThemePalette::heatmapLow()  { QColor c = blue();   c.setAlpha(50);  return c; }
-QColor ThemePalette::heatmapMid()  { QColor c = yellow(); c.setAlpha(150); return c; }
-QColor ThemePalette::heatmapHigh() { QColor c = red();    c.setAlpha(220); return c; }
+QColor ThemePalette::heatmapLow()  { QColor c = blue();   c.setAlpha(80);  return c; }
+QColor ThemePalette::heatmapMid()  { QColor c = yellow(); c.setAlpha(180); return c; }
+QColor ThemePalette::heatmapHigh() { QColor c = red();    c.setAlpha(230); return c; }
 
 std::vector<QColor> ThemePalette::chartPalette() {
     return { chartTcp(), chartUdp(), chartIcmp(), chartPps(),
@@ -154,15 +164,16 @@ QString ThemePalette::cardStyleSheet() {
 }
 
 QString ThemePalette::tableStyleSheet() {
+    // Мягкое выделение — цвет строки чуть светлее фона, без кричащего контраста
     return QString(
         "QTableWidget {"
         "  background-color: %1;"
-        "  alternate-background-color: #242437;"
+        "  alternate-background-color: %8;"
         "  color: %2;"
         "  gridline-color: transparent;"
         "  border: 1px solid %3;"
         "  border-radius: 8px;"
-        "  padding: 5px;"
+        "  padding: 2px;"
         "}"
         "QHeaderView::section {"
         "  background-color: %4;"
@@ -173,17 +184,30 @@ QString ThemePalette::tableStyleSheet() {
         "  text-transform: uppercase;"
         "  font-size: 10px;"
         "}"
+        "QHeaderView::section:hover {"
+        "  background-color: %3;"
+        "}"
         "QTableWidget::item {"
-        "  padding: 10px;"
+        "  padding: 8px 10px;"
         "  border-bottom: 1px solid %3;"
+        "  background: transparent;"
         "}"
         "QTableWidget::item:selected {"
         "  background-color: %6;"
-        "  color: %7;"
+        "  color: %2;"
+        "  border: none;"
+        "}"
+        "QTableWidget::item:hover {"
+        "  background-color: %7;"
         "}")
-        .arg(base().name(), text().name(), surface0().name(),
-             mantle().name(), subtext0().name(),
-             surface1().name(), rosewater().name());
+        .arg(crust().name(),        // %1 background
+             text().name(),          // %2 color
+             surface0().name(),      // %3 border/grid
+             mantle().name(),        // %4 header bg
+             subtext0().name(),      // %5 header color
+             surface0().name(),      // %6 selected (мягкое)
+             surface0().name(),      // %7 hover
+             mantle().name());       // %8 alternate
 }
 
 QString ThemePalette::buttonStyleSheet() {
@@ -193,11 +217,289 @@ QString ThemePalette::buttonStyleSheet() {
         "  color: %2;"
         "  border: 1px solid %3;"
         "  border-radius: 4px;"
-        "  padding: 8px 18px;"
+        "  padding: 5px 14px;"
         "  font-weight: bold;"
+        "  font-size: 11px;"
         "}"
         "QPushButton:hover {"
         "  background: %3;"
+        "  border-color: %4;"
+        "}"
+        "QPushButton:pressed {"
+        "  background: %4;"
         "}")
-        .arg(surface0().name(), text().name(), surface1().name());
+        .arg(surface0().name(), text().name(), surface1().name(), surface2().name());
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Global QSS — обеспечивает единый стиль для ВСЕХ виджетов
+// ═══════════════════════════════════════════════════════════════
+QString ThemePalette::globalStyleSheet() {
+    QString bg    = crust().name();
+    QString bg2   = base().name();
+    QString bg3   = mantle().name();
+    QString surf0 = surface0().name();
+    QString surf1 = surface1().name();
+    QString txt   = text().name();
+    QString txt2  = subtext0().name();
+    QString acc   = green().name();
+
+    return QString(
+        // === Базовые виджеты ===
+        "QWidget {"
+        "  background-color: %1;"
+        "  color: %6;"
+        "  font-family: 'Segoe UI', Arial, sans-serif;"
+        "  font-size: 12px;"
+        "}"
+
+        // === Главное окно и QFrame ===
+        "QMainWindow, QDialog {"
+        "  background-color: %1;"
+        "}"
+
+        // === GroupBox ===
+        "QGroupBox {"
+        "  background-color: %2;"
+        "  border: 1px solid %4;"
+        "  border-radius: 8px;"
+        "  margin-top: 8px;"
+        "  padding-top: 6px;"
+        "  font-weight: bold;"
+        "  color: %7;"
+        "}"
+        "QGroupBox::title {"
+        "  subcontrol-origin: margin;"
+        "  subcontrol-position: top left;"
+        "  left: 10px;"
+        "  padding: 0 4px;"
+        "  color: %7;"
+        "}"
+
+        // === ScrollArea ===
+        "QScrollArea {"
+        "  background: %1;"
+        "  border: none;"
+        "}"
+
+        // === ScrollBar ===
+        "QScrollBar:vertical {"
+        "  background: %3;"
+        "  width: 8px;"
+        "  border-radius: 4px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "  background: %4;"
+        "  border-radius: 4px;"
+        "  min-height: 20px;"
+        "}"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+        "  height: 0;"
+        "}"
+        "QScrollBar:horizontal {"
+        "  background: %3;"
+        "  height: 8px;"
+        "  border-radius: 4px;"
+        "}"
+        "QScrollBar::handle:horizontal {"
+        "  background: %4;"
+        "  border-radius: 4px;"
+        "  min-width: 20px;"
+        "}"
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {"
+        "  width: 0;"
+        "}"
+
+        // === ToolBar ===
+        "QToolBar {"
+        "  background: %3;"
+        "  border-bottom: 1px solid %4;"
+        "  spacing: 8px;"
+        "}"
+
+        // === StatusBar ===
+        "QStatusBar {"
+        "  background: %3;"
+        "  color: %7;"
+        "  border-top: 1px solid %4;"
+        "}"
+
+        // === ComboBox ===
+        "QComboBox {"
+        "  background: %4;"
+        "  color: %6;"
+        "  border: 1px solid %5;"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "  min-width: 80px;"
+        "}"
+        "QComboBox:hover {"
+        "  border-color: %8;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "  background: %3;"
+        "  color: %6;"
+        "  border: 1px solid %4;"
+        "  selection-background-color: %4;"
+        "}"
+
+        // === LineEdit / DateEdit ===
+        "QLineEdit, QDateEdit, QSpinBox {"
+        "  background: %4;"
+        "  color: %6;"
+        "  border: 1px solid %5;"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "}"
+        "QLineEdit:focus, QDateEdit:focus {"
+        "  border-color: %8;"
+        "}"
+
+        // === CheckBox ===
+        "QCheckBox {"
+        "  color: %6;"
+        "  spacing: 6px;"
+        "}"
+        "QCheckBox::indicator {"
+        "  width: 14px;"
+        "  height: 14px;"
+        "  border: 2px solid %5;"
+        "  border-radius: 3px;"
+        "  background: %4;"
+        "}"
+        "QCheckBox::indicator:checked {"
+        "  background: %8;"
+        "  border-color: %8;"
+        "}"
+
+        // === PushButton ===
+        "QPushButton {"
+        "  background: %4;"
+        "  color: %6;"
+        "  border: 1px solid %5;"
+        "  border-radius: 4px;"
+        "  padding: 5px 14px;"
+        "  font-weight: bold;"
+        "}"
+        "QPushButton:hover {"
+        "  background: %5;"
+        "  border-color: %8;"
+        "}"
+        "QPushButton:pressed {"
+        "  background: %5;"
+        "}"
+
+        // === Label (без фона по умолчанию) ===
+        "QLabel {"
+        "  background: transparent;"
+        "  color: %6;"
+        "}"
+
+        // === ToolTip ===
+        "QToolTip {"
+        "  background: %3;"
+        "  color: %6;"
+        "  border: 1px solid %4;"
+        "  padding: 4px;"
+        "  border-radius: 4px;"
+        "}"
+
+        // === Menu ===
+        "QMenu {"
+        "  background: %3;"
+        "  color: %6;"
+        "  border: 1px solid %4;"
+        "}"
+        "QMenu::item:selected {"
+        "  background: %4;"
+        "}"
+
+        // === TabWidget ===
+        "QTabWidget::pane {"
+        "  background: %2;"
+        "  border: 1px solid %4;"
+        "}"
+        "QTabBar::tab {"
+        "  background: %3;"
+        "  color: %7;"
+        "  padding: 6px 16px;"
+        "  border-radius: 4px 4px 0 0;"
+        "}"
+        "QTabBar::tab:selected {"
+        "  background: %2;"
+        "  color: %6;"
+        "}"
+
+        // === Custom Classes ===
+        "*[cssClass=\"sidebarList\"] {"
+        "  background: %3; border: none; padding: 0px;"
+        "  font-size: 13px; color: %7; outline: none;"
+        "}"
+        "*[cssClass=\"sidebarList\"]::item {"
+        "  padding: 15px 18px; border-left: 4px solid transparent;"
+        "}"
+        "*[cssClass=\"sidebarList\"]::item:selected {"
+        "  background: %4; color: %8; border-left: 4px solid %8;"
+        "}"
+        "*[cssClass=\"sidebarList\"]::item:hover:!selected {"
+        "  background: %2;"
+        "}"
+    ) + tableStyleSheet() + QString(
+        "*[cssClass=\"toolbarBtnYellow\"] {"
+        "  padding: 5px 12px; color: #f9e2af; font-weight: bold; background: %4; border: 1px solid %5; border-radius: 4px;"
+        "}"
+        "*[cssClass=\"toolbarBtnYellow\"]:hover { background: %5; }"
+
+        "*[cssClass=\"toolbarBtnGreen\"] {"
+        "  padding: 5px 12px; color: #a6e3a1; font-weight: bold; background: %4; border: 1px solid %5; border-radius: 4px;"
+        "}"
+        "*[cssClass=\"toolbarBtnGreen\"]:hover { background: %5; }"
+
+        "*[cssClass=\"toolbarBtnPeach\"] {"
+        "  padding: 5px 12px; color: #fab387; font-weight: bold; background: %4; border: 1px solid %5; border-radius: 4px;"
+        "}"
+        "*[cssClass=\"toolbarBtnPeach\"]:hover { background: %5; }"
+
+        "*[cssClass=\"toolbarBtnRed\"] {"
+        "  padding: 5px 12px; color: white; font-weight: bold; background: #f38ba8; border: 1px solid #f38ba8; border-radius: 4px;"
+        "}"
+
+        "*[cssClass=\"dashboardCard\"] {"
+        "  background: %2;"
+        "  border: 1px solid %4;"
+        "  border-radius: 8px;"
+        "}"
+
+        "*[cssClass=\"overviewTitle\"] {"
+        "  color: %6; font-size: 13px; font-weight: bold; background: transparent; padding: 5px;"
+        "}"
+        "*[cssClass=\"chartTitle\"] {"
+        "  color: %6; font-size: 14px; font-weight: bold; border: none; background: transparent;"
+        "}"
+
+        "*[cssClass=\"statusLabelGreen\"] {"
+        "  color: #a6e3a1; font-size: 12px; font-weight: bold; background: transparent;"
+        "}"
+        "*[cssClass=\"statusLabelRed\"] {"
+        "  color: #f38ba8; font-size: 12px; font-weight: bold; background: transparent;"
+        "}"
+        "*[cssClass=\"statusLabelPeach\"] {"
+        "  color: #fab387; font-size: 12px; font-weight: bold; background: transparent;"
+        "}"
+        "*[cssClass=\"statusLabelText\"] {"
+        "  color: %6; font-size: 12px; font-weight: bold; background: transparent;"
+        "}"
+
+        "*[cssClass=\"dashboardCheckbox\"] {"
+        "  color: %6; font-size: 12px; font-weight: bold; background: transparent;"
+        "}"
+    )
+    .arg(bg,     // %1 crust
+         bg2,    // %2 base
+         bg3,    // %3 mantle
+         surf0,  // %4 surface0
+         surf1,  // %5 surface1
+         txt,    // %6 text
+         txt2,   // %7 subtext0
+         acc);   // %8 green (accent)
 }
