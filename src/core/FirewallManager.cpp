@@ -3,23 +3,33 @@
 #include <cstdlib>
 #include <thread>
 #include <mutex>
+#include <QHostAddress>
+#include <QProcess>
 
 static std::mutex g_firewallMutex;
 
 void FirewallManager::blockIp(const std::string& ip) {
+    QHostAddress addr(QString::fromStdString(ip));
+    if (addr.isNull()) {
+        AppLogger::get()->error("[SECURITY] Invalid IP address blocked: {}", ip);
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(g_firewallMutex);
     if (activeBlockedIps_.count(ip)) return;
 
 #ifdef _WIN32
-    std::string ruleName = "DDoS_Block_" + ip;
-    std::string cmd = "netsh advfirewall firewall add rule name=\"" + ruleName + 
-                      "\" dir=in action=block remoteip=" + ip;
-    
     AppLogger::get()->warn("Active Mitigation: Executing firewall block for IP {}", ip);
     
     // We execute this asynchronously so it doesn't block the inference loop
-    std::thread([cmd, ip, this]() {
-        int result = std::system(cmd.c_str());
+    std::thread([ip]() {
+        QString program = "netsh";
+        QStringList arguments;
+        arguments << "advfirewall" << "firewall" << "add" << "rule"
+                  << "name=DDoS_Block_" + QString::fromStdString(ip)
+                  << "dir=in" << "action=block" << "remoteip=" + QString::fromStdString(ip);
+
+        int result = QProcess::execute(program, arguments);
         if (result == 0) {
             AppLogger::get()->info("Active Mitigation: Successfully blocked IP {}", ip);
         } else {
@@ -34,16 +44,23 @@ void FirewallManager::blockIp(const std::string& ip) {
 }
 
 void FirewallManager::unblockIp(const std::string& ip) {
+    QHostAddress addr(QString::fromStdString(ip));
+    if (addr.isNull()) {
+        AppLogger::get()->error("[SECURITY] Invalid IP address for unblock: {}", ip);
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(g_firewallMutex);
     if (!activeBlockedIps_.count(ip)) return;
 
 #ifdef _WIN32
-    std::string ruleName = "DDoS_Block_" + ip;
-    std::string cmd = "netsh advfirewall firewall delete rule name=\"" + ruleName + "\"";
-    
     AppLogger::get()->info("Active Mitigation: Removing firewall block for IP {}", ip);
-    std::thread([cmd]() {
-        std::system(cmd.c_str());
+    std::thread([ip]() {
+        QString program = "netsh";
+        QStringList arguments;
+        arguments << "advfirewall" << "firewall" << "delete" << "rule"
+                  << "name=DDoS_Block_" + QString::fromStdString(ip);
+        QProcess::execute(program, arguments);
     }).detach();
 #endif
     activeBlockedIps_.erase(ip);
@@ -53,12 +70,13 @@ void FirewallManager::unblockAllIps() {
     std::lock_guard<std::mutex> lock(g_firewallMutex);
 #ifdef _WIN32
     for (const auto& ip : activeBlockedIps_) {
-        std::string ruleName = "DDoS_Block_" + ip;
-        std::string cmd = "netsh advfirewall firewall delete rule name=\"" + ruleName + "\"";
-        
         AppLogger::get()->info("Active Mitigation: Removing firewall block for IP {}", ip);
-        std::thread([cmd]() {
-            std::system(cmd.c_str());
+        std::thread([ip]() {
+            QString program = "netsh";
+            QStringList arguments;
+            arguments << "advfirewall" << "firewall" << "delete" << "rule"
+                      << "name=DDoS_Block_" + QString::fromStdString(ip);
+            QProcess::execute(program, arguments);
         }).detach();
     }
 #endif
@@ -68,12 +86,12 @@ void FirewallManager::unblockAllIps() {
 void FirewallManager::clearAllRules() {
     std::lock_guard<std::mutex> lock(g_firewallMutex);
 #ifdef _WIN32
-    // Delete any rules starting with "DDoS_Block_" just in case there are leftovers
-    std::string cmd = "netsh advfirewall firewall delete rule name=all | findstr DDoS_Block_ && netsh advfirewall firewall delete rule name=\"DDoS_Block_*\"";
-    std::thread([cmd]() {
-        std::system("netsh advfirewall firewall delete rule name=all | findstr DDoS_Block_ >nul 2>&1"); // Check if any exist to avoid errors in console
-        // We can just execute a wildcard delete
-        std::system("netsh advfirewall firewall delete rule name=\"DDoS_Block_*\" >nul 2>&1");
+    std::thread([]() {
+        QString program = "netsh";
+        QStringList arguments;
+        arguments << "advfirewall" << "firewall" << "delete" << "rule"
+                  << "name=DDoS_Block_*";
+        QProcess::execute(program, arguments);
     }).detach();
 #endif
     activeBlockedIps_.clear();
