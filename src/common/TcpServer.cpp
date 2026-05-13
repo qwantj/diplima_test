@@ -43,10 +43,11 @@ void TcpServer::incomingConnection(qintptr socketDescriptor) {
         auto messages = fileBuffer_.readAllAndClear();
         nlohmann::json bufferMsg;
         bufferMsg["type"] = Protocol::MSG_BUFFER;
-        nlohmann::json items = nlohmann::json::array();
+        std::vector<nlohmann::json> items;
+        items.reserve(messages.size());
         for (const auto& msg : messages) {
             try {
-                items.push_back(nlohmann::json::parse(msg.toStdString()));
+                items.push_back(nlohmann::json::parse(msg.begin(), msg.end()));
             } catch (const std::exception& e) {
                 std::string rawData = msg.toStdString();
                 if (rawData.length() > 100) {
@@ -55,7 +56,7 @@ void TcpServer::incomingConnection(qintptr socketDescriptor) {
                 AppLogger::get()->warn("TcpServer: failed to parse buffered message: {}. Raw data: {}", e.what(), rawData);
             }
         }
-        bufferMsg["items"] = items;
+        bufferMsg["items"] = std::move(items);
         QByteArray framed = Protocol::frame(QByteArray::fromStdString(bufferMsg.dump()));
         socket->write(framed);
         socket->flush();
