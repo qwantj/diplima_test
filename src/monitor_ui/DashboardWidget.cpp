@@ -661,9 +661,11 @@ void DashboardWidget::setupAnalytics() {
 
     auto* topLayout = new QHBoxLayout();
     auto* healthGrp = new QGroupBox("Global SLO Health (Last points)");
+    healthGrp->setToolTip("История доступности сервиса (SLO). Зеленый - норма, Красный - аномалия/атака");
     auto* hL = new QVBoxLayout(healthGrp); sloHealth_ = new AlertGridWidget(); hL->addWidget(sloHealth_);
     topLayout->addWidget(healthGrp, 1);
     auto* topGrp = new QGroupBox("Network Topology");
+    topGrp->setToolTip("Визуализация целевых IP-адресов и нагрузки на них");
     auto* tL = new QVBoxLayout(topGrp); topologyWidget_ = new NetworkTopologyWidget(); tL->addWidget(topologyWidget_);
     topLayout->addWidget(topGrp, 2);
     layout->addLayout(topLayout, 1);
@@ -697,6 +699,7 @@ void DashboardWidget::setupAnalytics() {
     midLayout->addWidget(tableTargets_, 1);
     
     auto* portsGrp = new QGroupBox("Top Active Ports");
+    portsGrp->setToolTip("Распределение трафика по портам (Pie Chart)");
     auto* pL = new QVBoxLayout(portsGrp);
     topPortsChart_ = new QChart(); topPortsChart_->setBackgroundBrush(Qt::transparent);
     topPortsChart_->legend()->setAlignment(Qt::AlignBottom);
@@ -714,6 +717,7 @@ void DashboardWidget::setupAnalytics() {
 
     // Network Bandwidth — с area-заливкой под линию (п.7)
     auto* bwGrp = new QGroupBox("Network Bandwidth");
+    bwGrp->setToolTip("Текущая пропускная способность сети (Mbps)");
     auto* bL = new QVBoxLayout(bwGrp);
     bandwidthChart_ = new QChart();
     bandwidthChart_->setBackgroundBrush(ThemePalette::crust());
@@ -748,6 +752,7 @@ void DashboardWidget::setupAnalytics() {
     botLayout->addWidget(bwGrp, 1);
 
     auto* hmGrp = new QGroupBox("Port Activity Heatmap");
+    hmGrp->setToolTip("Активность портов во времени. Цвет показывает интенсивность трафика");
     auto* hmL = new QVBoxLayout(hmGrp);
     heatmapWidget_ = new HeatmapWidget();
     hmL->addWidget(heatmapWidget_);
@@ -755,6 +760,7 @@ void DashboardWidget::setupAnalytics() {
 
     // Packet Size Distribution — п.5: инициализируем 5 нулями
     auto* sizeGrp = new QGroupBox("Packet Size Distribution");
+    sizeGrp->setToolTip("Распределение пакетов по размерам (байт)");
     auto* sL = new QVBoxLayout(sizeGrp);
     packetSizeChart_ = new QChart();
     packetSizeChart_->setBackgroundBrush(ThemePalette::crust()); // п.7

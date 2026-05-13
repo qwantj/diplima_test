@@ -58,17 +58,21 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     
-    // Draw background
-    p.setBrush(QColor(30, 30, 46));
-    p.setPen(QPen(QColor(49, 50, 68), 1));
+    // Draw background using theme palette
+    p.setBrush(ThemePalette::mantle());
+    p.setPen(QPen(ThemePalette::surface0(), 1));
     p.drawRoundedRect(rect().adjusted(1, 1, -1, -25), 6, 6);
 
-    int w = (width() - 15) / NUM_BUCKETS;
+    double marginL = 8.0;
+    double usableW = (double)width() - marginL - 8.0;
     int h = height() - 35;
 
     for (int i = 0; i < NUM_BUCKETS; i++) {
-        QRect r(8 + i * w, 6, w - 2, h);
-        QColor color = QColor(49, 50, 68); // Base / Empty
+        double x1 = marginL + (usableW * i / NUM_BUCKETS);
+        double x2 = marginL + (usableW * (i + 1) / NUM_BUCKETS);
+        QRectF r(x1, 6, x2 - x1 - 2, h);
+        
+        QColor color = ThemePalette::surface0(); // Empty / No data
         if (hourBuckets_[i] == BucketType::Benign) color = ThemePalette::success();
         else if (hourBuckets_[i] == BucketType::Attack) color = ThemePalette::danger();
         
@@ -77,7 +81,7 @@ void TimelineWidget::paintEvent(QPaintEvent*) {
         p.drawRoundedRect(r, 2, 2);
     }
 
-    p.setPen(QColor(166, 173, 200));
+    p.setPen(ThemePalette::subtext0());
     QFont f = p.font(); f.setPointSize(8); f.setBold(true); p.setFont(f);
     p.drawText(8, height() - 5, "00:00");
     p.drawText(width() / 2 - 15, height() - 5, "12:00");

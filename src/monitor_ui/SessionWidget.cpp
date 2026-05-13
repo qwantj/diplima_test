@@ -10,6 +10,7 @@ SessionWidget::SessionWidget(QWidget* parent) : QWidget(parent) {
     table_ = new QTableWidget(this);
     table_->setColumnCount(6);
     table_->setHorizontalHeaderLabels({"ID", "Start Time", "Interface/PCAP", "Model", "Attacks", "Total Packets"});
+    table_->setToolTip("Двойной клик по сессии для загрузки её истории на графики и в логи");
     
     table_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table_->horizontalHeader()->setStretchLastSection(true);

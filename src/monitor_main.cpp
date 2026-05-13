@@ -68,7 +68,31 @@ private:
     QIcon            iconAttack_;
 };
 
+#include <QToolTip>
+#include <QMouseEvent>
+
+class RightClickToolTipFilter : public QObject {
+public:
+    explicit RightClickToolTipFilter(QObject* parent = nullptr) : QObject(parent) {}
+protected:
+    bool eventFilter(QObject* obj, QEvent* event) override {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::RightButton) {
+                auto* widget = qobject_cast<QWidget*>(obj);
+                if (widget && !widget->toolTip().isEmpty()) {
+                    QToolTip::showText(mouseEvent->globalPosition().toPoint(), widget->toolTip(), widget);
+                    return true;
+                }
+            }
+        }
+        return QObject::eventFilter(obj, event);
+    }
+};
+
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+    qApp->installEventFilter(new RightClickToolTipFilter(this));
+
     setWindowTitle("DDoS Dashboard");
     resize(1280, 800);
 
@@ -136,7 +160,7 @@ void MainWindow::setupUI() {
     sidebarList_->setProperty("cssClass", "sidebarList");
     sidebarList_->setIconSize(QSize(22, 22));
 
-    auto addSidebarItem = [this](const QString& text, const QColor& color, int iconType) {
+    auto addSidebarItem = [this](const QString& text, const QColor& color, int iconType, const QString& tooltip) {
         auto* item = new QListWidgetItem(sidebarList_);
         QPixmap pixmap(24, 24);
         pixmap.fill(Qt::transparent);
@@ -144,7 +168,7 @@ void MainWindow::setupUI() {
         p.setRenderHint(QPainter::Antialiasing);
         p.setBrush(color);
         p.setPen(Qt::NoPen);
-        
+
         if (iconType == 0) { // Dashboard (Blocks)
             p.drawRoundedRect(2, 2, 8, 8, 2, 2); p.drawRoundedRect(12, 2, 8, 8, 2, 2);
             p.drawRoundedRect(2, 12, 8, 8, 2, 2); p.setBrush(QColor(80, 80, 80)); p.drawRoundedRect(12, 12, 8, 8, 2, 2);
@@ -165,14 +189,15 @@ void MainWindow::setupUI() {
         }
         item->setIcon(QIcon(pixmap));
         item->setText("  " + text);
+        item->setToolTip(tooltip);
         sidebarList_->addItem(item);
     };
 
-    addSidebarItem("Dashboard", ThemePalette::green(), 0);
-    addSidebarItem("Deep Analytics", ThemePalette::blue(), 1);
-    addSidebarItem("Event Log", ThemePalette::peach(), 2);
-    addSidebarItem("Security Incidents", ThemePalette::blue(), 3);
-    addSidebarItem("Sessions History", ThemePalette::mauve(), 4);
+    addSidebarItem("Dashboard", ThemePalette::green(), 0, "Главная панель: Общее состояние и основные графики");
+    addSidebarItem("Deep Analytics", ThemePalette::blue(), 1, "Глубокая аналитика: Топология сети, SLO и распределение трафика");
+    addSidebarItem("Event Log", ThemePalette::peach(), 2, "Лог событий: Подробный список всех классифицированных потоков");
+    addSidebarItem("Security Incidents", ThemePalette::blue(), 3, "Инциденты безопасности: История обнаруженных атак с таймлайном");
+    addSidebarItem("Sessions History", ThemePalette::mauve(), 4, "История сессий: Список всех прошлых запусков системы");
     
     sidebarList_->setCurrentRow(0);
     contentLayout->addWidget(sidebarList_);
