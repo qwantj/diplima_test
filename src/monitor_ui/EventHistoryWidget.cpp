@@ -33,8 +33,8 @@ void TimelineWidget::setEvents(const std::vector<DetectionResult>& events, const
         QDateTime overlapStart = std::max(s.startTime, dayStart);
         QDateTime overlapEnd = std::min(sEnd, dayEnd);
         
-        int startIdx = overlapStart.time().hour() * 2 + (overlapStart.time().minute() / 30);
-        int endIdx = overlapEnd.time().hour() * 2 + (overlapEnd.time().minute() / 30);
+        int startIdx = overlapStart.time().hour() * BUCKETS_PER_HOUR + (overlapStart.time().minute() / MINUTES_PER_BUCKET);
+        int endIdx = overlapEnd.time().hour() * BUCKETS_PER_HOUR + (overlapEnd.time().minute() / MINUTES_PER_BUCKET);
         
         for (int i = startIdx; i <= endIdx && i < NUM_BUCKETS; ++i) {
             hourBuckets_[i] = BucketType::Benign;
@@ -46,9 +46,9 @@ void TimelineWidget::setEvents(const std::vector<DetectionResult>& events, const
         if (e.timestamp.date() != day) continue;
         int hour = e.timestamp.time().hour();
         int min = e.timestamp.time().minute();
-        int idx = hour * 2 + (min / 30);
+        int idx = hour * BUCKETS_PER_HOUR + (min / MINUTES_PER_BUCKET);
         if (idx < NUM_BUCKETS) {
-            if (e.label == 1) hourBuckets_[idx] = BucketType::Attack;
+            if (e.label == static_cast<int>(TrafficLabel::Attack)) hourBuckets_[idx] = BucketType::Attack;
         }
     }
     update();
