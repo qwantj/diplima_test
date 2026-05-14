@@ -196,22 +196,14 @@ std::vector<std::vector<double>> FeatureExtractor::computeFeaturesBatch() {
         double avgWindowSize = (stats.fwdPackets + stats.bwdPackets > 0) ? 
             (double)stats.tcpWindowSizeTotal / (stats.fwdPackets + stats.bwdPackets) : 0.0;
 
-        // Base 8 features
+        // Base and Extended features (if mapped by scaler, they'll be used, else ignored by model)
         std::vector<double> features = {
-            flowDuration, totalFwdPackets, totalBwdPackets, totalLenFwd, totalLenBwd, fwdMean, bwdMean, flowPps
+            flowDuration, totalFwdPackets, totalBwdPackets, totalLenFwd, totalLenBwd, fwdMean, bwdMean, flowPps,
+            (double)stats.synPackets, (double)stats.ackPackets, (double)stats.finPackets, (double)stats.rstPackets,
+            (double)stats.pshPackets, (double)stats.urgPackets, entropy, avgWindowSize
         };
-        
-        // Extended features (if mapped by scaler, they'll be used, else ignored by model)
-        features.push_back((double)stats.synPackets);
-        features.push_back((double)stats.ackPackets);
-        features.push_back((double)stats.finPackets);
-        features.push_back((double)stats.rstPackets);
-        features.push_back((double)stats.pshPackets);
-        features.push_back((double)stats.urgPackets);
-        features.push_back(entropy);
-        features.push_back(avgWindowSize);
 
-        batch.push_back(features);
+        batch.push_back(std::move(features));
     }
     return batch;
 }
