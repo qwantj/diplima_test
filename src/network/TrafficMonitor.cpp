@@ -158,7 +158,9 @@ bool TrafficMonitor::replayPcap(const std::string& filePath) {
         }
 
         if (packetQueue_.size_approx() < MAX_QUEUE_SIZE) {
-            packetQueue_.enqueue(rawPacket);
+            PacketBuffer* buf = getBuffer();
+            buf->assign(rawPacket.getRawData(), rawPacket.getRawDataLen(), std::chrono::system_clock::now());
+            packetQueue_.enqueue(buf);
             totalCaptured_++;
         } else {
             droppedPackets_++;
@@ -179,8 +181,26 @@ void TrafficMonitor::setBpfFilter(const std::string& filter) {
     }
 }
 
-bool TrafficMonitor::dequeuePacket(pcpp::RawPacket& packet) {
+bool TrafficMonitor::dequeuePacket(PacketBuffer*& packet) {
     return packetQueue_.try_dequeue(packet);
+}
+
+bool TrafficMonitor::dequeuePacketTimed(PacketBuffer*& packet, std::chrono::microseconds timeout) {
+    return packetQueue_.wait_dequeue_timed(packet, timeout);
+}
+
+void TrafficMonitor::recycleBuffer(PacketBuffer* packet) {
+    if (packet) {
+        bufferPool_.enqueue(packet);
+    }
+}
+
+PacketBuffer* TrafficMonitor::getBuffer() {
+    PacketBuffer* buf = nullptr;
+    if (!bufferPool_.try_dequeue(buf)) {
+        buf = new PacketBuffer();
+    }
+    return buf;
 }
 
 size_t TrafficMonitor::queueSize() const {
@@ -190,7 +210,9 @@ size_t TrafficMonitor::queueSize() const {
 void TrafficMonitor::onPacketArrived(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie) {
     auto* self = static_cast<TrafficMonitor*>(cookie);
     if (self->packetQueue_.size_approx() < MAX_QUEUE_SIZE) {
-        self->packetQueue_.enqueue(*packet);
+        PacketBuffer* buf = self->getBuffer();
+        buf->assign(packet->getRawData(), packet->getRawDataLen(), std::chrono::system_clock::now());
+        self->packetQueue_.enqueue(buf);
         self->totalCaptured_++;
     } else {
         self->droppedPackets_++;

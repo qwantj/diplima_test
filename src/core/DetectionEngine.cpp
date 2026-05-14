@@ -133,13 +133,14 @@ void DetectionEngine::inferenceLoop() {
 
         // Collect packets for the window duration
         while (running_) {
-            auto elapsed = std::chrono::steady_clock::now() - windowStart;
-            if (std::chrono::duration<double>(elapsed).count() >= INFERENCE_WINDOW_SEC)
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration<double>(now - windowStart).count();
+            if (elapsed >= INFERENCE_WINDOW_SEC)
                 break;
 
-            pcpp::RawPacket pkt;
-            if (monitor_.dequeuePacket(pkt)) {
-                extractor_.processPacket(pkt);
+            double remaining = INFERENCE_WINDOW_SEC - elapsed;
+            auto timeout = std::chrono::microseconds(static_cast<long long>(remaining * 1e6));
+            if (timeout.count() < 1000) timeout = std::chrono::microseconds(1000);
 
                 if (dumpEnabled_)
                     dumper_.addPacket(pkt);

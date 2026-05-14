@@ -1,5 +1,6 @@
 #include "network/FeatureExtractor.hpp"
 #include "common/AppLogger.hpp"
+#include "common/NetStructs.hpp"
 
 #include <Packet.h>
 #include <EthLayer.h>
@@ -8,6 +9,8 @@
 #include <UdpLayer.h>
 #include <IcmpLayer.h>
 #include <PayloadLayer.h>
+
+#include <arpa/inet.h>
 
 #include <fstream>
 #include <cmath>
@@ -47,6 +50,136 @@ bool FeatureExtractor::loadScalerParams(const std::string& jsonPath) {
     } catch (const std::exception& e) {
         AppLogger::get()->error("FeatureExtractor: scaler parse error: {}", e.what());
         return false;
+    }
+}
+
+void FeatureExtractor::processPacket(PacketBuffer* pktBuf) {
+    if (!windowStarted_) {
+        windowStart_ = std::chrono::steady_clock::now();
+        windowStarted_ = true;
+    }
+
+    int pktLen = pktBuf->size();
+    totalBytes_ += pktLen;
+
+    // Size histogram
+    if (pktLen <= 64)       sizeHistogram_[0]++;
+    else if (pktLen <= 256) sizeHistogram_[1]++;
+    else if (pktLen <= 512) sizeHistogram_[2]++;
+    else if (pktLen <= 1024)sizeHistogram_[3]++;
+    else                    sizeHistogram_[4]++;
+
+    if (pktLen < sizeof(eth_hdr)) {
+        otherPackets_++;
+        return; // Too small for Ethernet
+    }
+
+    const uint8_t* data = pktBuf->data();
+    const eth_hdr* eth = reinterpret_cast<const eth_hdr*>(data);
+    uint16_t ethertype = ntohs(eth->ethertype);
+
+    size_t l3_offset = sizeof(eth_hdr);
+    // Skip VLAN tags if present
+    while (ethertype == 0x8100 || ethertype == 0x88A8) {
+        if (pktLen < l3_offset + 4) return;
+        ethertype = ntohs(*reinterpret_cast<const uint16_t*>(data + l3_offset + 2));
+        l3_offset += 4;
+    }
+
+    std::string srcIp, dstIp;
+    uint8_t proto = 0;
+    size_t l4_offset = 0;
+
+    if (ethertype == 0x0800) { // IPv4
+        if (pktLen < l3_offset + sizeof(ipv4_hdr)) {
+            otherPackets_++;
+            return;
+        }
+        const ipv4_hdr* ip = reinterpret_cast<const ipv4_hdr*>(data + l3_offset);
+
+        char src[INET_ADDRSTRLEN], dst[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &ip->saddr, src, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, &ip->daddr, dst, INET_ADDRSTRLEN);
+        srcIp = src;
+        dstIp = dst;
+
+        proto = ip->protocol;
+        l4_offset = l3_offset + (ip->ihl * 4);
+    } else if (ethertype == 0x86DD) { // IPv6
+        if (pktLen < l3_offset + sizeof(ipv6_hdr)) {
+            otherPackets_++;
+            return;
+        }
+        const ipv6_hdr* ip6 = reinterpret_cast<const ipv6_hdr*>(data + l3_offset);
+
+        char src[INET6_ADDRSTRLEN], dst[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &ip6->saddr, src, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, &ip6->daddr, dst, INET6_ADDRSTRLEN);
+        srcIp = src;
+        dstIp = dst;
+
+        proto = ip6->nexthdr;
+        l4_offset = l3_offset + sizeof(ipv6_hdr);
+        // Note: basic IPv6, doesn't handle extension headers yet
+    } else {
+        otherPackets_++;
+        return;
+    }
+
+    if (!srcIp.empty()) {
+        srcIpCounts_[srcIp]++;
+        uniqueSources_.insert(srcIp);
+    }
+
+    uint16_t srcPort = 0, dstPort = 0;
+
+    if (proto == 6) { // TCP
+        if (pktLen < l4_offset + sizeof(tcp_hdr)) return;
+        const tcp_hdr* tcp = reinterpret_cast<const tcp_hdr*>(data + l4_offset);
+        tcpPackets_++;
+        if (tcp->syn) synPackets_++;
+        if (tcp->fin) finPackets_++;
+        if (tcp->rst) rstPackets_++;
+        srcPort = ntohs(tcp->source);
+        dstPort = ntohs(tcp->dest);
+        dstPortCounts_[dstPort]++;
+        targetCounts_[dstIp + ":" + std::to_string(dstPort)]++;
+    } else if (proto == 17) { // UDP
+        if (pktLen < l4_offset + sizeof(udp_hdr)) return;
+        const udp_hdr* udp = reinterpret_cast<const udp_hdr*>(data + l4_offset);
+        udpPackets_++;
+        srcPort = ntohs(udp->source);
+        dstPort = ntohs(udp->dest);
+        dstPortCounts_[dstPort]++;
+        targetCounts_[dstIp + ":" + std::to_string(dstPort)]++;
+    } else if (proto == 1 || proto == 58) { // ICMP or ICMPv6
+        icmpPackets_++;
+    } else {
+        otherPackets_++;
+    }
+
+    FlowKey fk;
+    if (srcIp < dstIp || (srcIp == dstIp && srcPort <= dstPort)) {
+        fk = {srcIp, dstIp, srcPort, dstPort, proto};
+    } else {
+        fk = {dstIp, srcIp, dstPort, srcPort, proto};
+    }
+
+    auto it = flowInitiators_.find(fk);
+    bool isForward;
+    if (it == flowInitiators_.end()) {
+        flowInitiators_[fk] = srcIp;
+        isForward = true;
+    } else {
+        isForward = (it->second == srcIp);
+    }
+
+    if (isForward) {
+        fwdPackets_++;
+        fwdBytes_ += pktLen;
+    } else {
+        bwdPackets_++;
+        bwdBytes_ += pktLen;
     }
 }
 
