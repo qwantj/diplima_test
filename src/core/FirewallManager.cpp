@@ -6,6 +6,10 @@
 #include <QHostAddress>
 #include <QProcess>
 
+#include <QProcess>
+#include <QHostAddress>
+#include <QStringList>
+
 static std::mutex g_firewallMutex;
 
 void FirewallManager::blockIp(const std::string& ip) {
@@ -17,6 +21,11 @@ void FirewallManager::blockIp(const std::string& ip) {
 
     std::lock_guard<std::mutex> lock(g_firewallMutex);
     if (activeBlockedIps_.count(ip)) return;
+
+    if (QHostAddress(QString::fromStdString(ip)).isNull()) {
+        AppLogger::get()->error("[SECURITY] Invalid IP format for firewall rule: '{}'. Operation aborted.", ip);
+        return;
+    }
 
 #ifdef _WIN32
     AppLogger::get()->warn("Active Mitigation: Executing firewall block for IP {}", ip);
@@ -52,6 +61,11 @@ void FirewallManager::unblockIp(const std::string& ip) {
 
     std::lock_guard<std::mutex> lock(g_firewallMutex);
     if (!activeBlockedIps_.count(ip)) return;
+
+    if (QHostAddress(QString::fromStdString(ip)).isNull()) {
+        AppLogger::get()->error("[SECURITY] Invalid IP format for firewall rule: '{}'. Operation aborted.", ip);
+        return;
+    }
 
 #ifdef _WIN32
     AppLogger::get()->info("Active Mitigation: Removing firewall block for IP {}", ip);

@@ -11,9 +11,14 @@
 
 // ---- Core data structures (Global Namespace for compatibility) ----
 
+enum class TrafficLabel {
+    Benign = 0,
+    Attack = 1
+};
+
 struct DetectionResult {
     QDateTime   timestamp;
-    int         label = 0; // 0: Benign, 1: Attack
+    int         label = static_cast<int>(TrafficLabel::Benign);
     float       confidence = 0.0f;
     double      pps = 0.0;
     uint64_t    totalPackets = 0;
