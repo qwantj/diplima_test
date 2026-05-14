@@ -142,8 +142,16 @@ void DetectionEngine::inferenceLoop() {
             auto timeout = std::chrono::microseconds(static_cast<long long>(remaining * 1e6));
             if (timeout.count() < 1000) timeout = std::chrono::microseconds(1000);
 
-                if (dumpEnabled_)
-                    dumper_.addPacket(pkt);
+            PacketBuffer* pkt = nullptr;
+            if (monitor_.dequeuePacket(pkt)) {
+                extractor_.processPacket(pkt);
+                if (dumpEnabled_) {
+                    // Convert back to RawPacket for dumper if needed, or update dumper to take PacketBuffer
+                    struct timeval tv = {0, 0};
+                    pcpp::RawPacket raw(pkt->data(), pkt->size(), tv, false);
+                    dumper_.addPacket(raw);
+                }
+                monitor_.recycleBuffer(pkt);
             } else {
                 // If in replay mode and monitor stopped capturing, and queue is empty, we are done
                 if (isReplayMode_ && !monitor_.isCapturing() && monitor_.queueSize() == 0) {
