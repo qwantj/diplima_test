@@ -1,8 +1,13 @@
 #include "test_ConfigManager.hpp"
 #include <QTemporaryFile>
 #include "common/ConfigManager.hpp"
+#include "common/AppLogger.hpp"
 #include <fstream>
 #include <QFile>
+
+void TestConfigManager::initTestCase() {
+    AppLogger::init();
+}
 
 void TestConfigManager::testLoadValidJson() {
         QString filePath;
@@ -74,7 +79,7 @@ void TestConfigManager::testLoadMissingFile() {
 
         QVERIFY(!result);
         // Default values should be untouched
-        QCOMPARE(QString::fromStdString(config.collectorHost), QString("localhost"));
+        QCOMPARE(QString::fromStdString(config.collectorHost), QString("127.0.0.1"));
         QCOMPARE(config.tcpPort, 50050);
     }
 
@@ -100,14 +105,18 @@ void TestConfigManager::testLoadInvalidJson() {
         }
 
         AppConfig config;
+        // Set non-default values to verify they are retained on failure
+        config.collectorHost = "existing_host";
+        config.tcpPort = 9999;
+
         bool result = ConfigManager::load(filePath.toStdString(), config);
 
         QFile::remove(filePath);
 
         QVERIFY(!result);
-        // Values should remain as defaults since load returns false on exception
-        QCOMPARE(QString::fromStdString(config.collectorHost), QString("localhost"));
-        QCOMPARE(config.tcpPort, 50050);
+        // Values should remain unchanged if load fails
+        QCOMPARE(QString::fromStdString(config.collectorHost), QString("existing_host"));
+        QCOMPARE(config.tcpPort, 9999);
     }
 
 void TestConfigManager::testLoadPartialJson() {
@@ -145,6 +154,28 @@ void TestConfigManager::testLoadPartialJson() {
         QCOMPARE(QString::fromStdString(config.dbHost), QString("localhost"));
 }
 
+void TestConfigManager::testLoadEmptyFile() {
+    QString filePath;
+    {
+        QTemporaryFile tempFile;
+        tempFile.setAutoRemove(false);
+        QVERIFY(tempFile.open());
+        filePath = tempFile.fileName();
+        tempFile.close();
+    }
+
+    AppConfig config;
+    config.collectorHost = "some_host";
+
+    bool result = ConfigManager::load(filePath.toStdString(), config);
+
+    QFile::remove(filePath);
+
+    // Empty file is typically invalid for nlohmann::json if it expects an object
+    QVERIFY(!result);
+    QCOMPARE(QString::fromStdString(config.collectorHost), QString("some_host"));
+}
+
 void TestConfigManager::testSaveDoesNotPersistPassword() {
     QString filePath;
     {
@@ -169,4 +200,39 @@ void TestConfigManager::testSaveDoesNotPersistPassword() {
     QCOMPARE(QString::fromStdString(loadedConfig.dbUser), QString("test_user"));
     // Password should NOT be persisted and thus should be empty when loaded back
     QCOMPARE(QString::fromStdString(loadedConfig.dbPass), QString(""));
+}
+
+void TestConfigManager::testEnvOverride() {
+    QTemporaryFile tempFile;
+    QVERIFY(tempFile.open());
+    QString filePath = tempFile.fileName();
+    tempFile.close();
+
+    AppConfig config;
+    config.dbUser = "json_user";
+    config.dbPass = "json_pass";
+    QVERIFY(ConfigManager::save(filePath.toStdString(), config));
+
+#ifdef Q_OS_WIN
+    _putenv("DDOS_DB_USER=env_user");
+    _putenv("DDOS_DB_PASS=env_pass");
+#else
+    setenv("DDOS_DB_USER", "env_user", 1);
+    setenv("DDOS_DB_PASS", "env_pass", 1);
+#endif
+
+    AppConfig loadedConfig;
+    QVERIFY(ConfigManager::load(filePath.toStdString(), loadedConfig));
+
+    QCOMPARE(QString::fromStdString(loadedConfig.dbUser), QString("env_user"));
+    QCOMPARE(QString::fromStdString(loadedConfig.dbPass), QString("env_pass"));
+
+    // Cleanup environment to avoid affecting other tests
+#ifdef Q_OS_WIN
+    _putenv("DDOS_DB_USER=");
+    _putenv("DDOS_DB_PASS=");
+#else
+    unsetenv("DDOS_DB_USER");
+    unsetenv("DDOS_DB_PASS");
+#endif
 }
