@@ -25,6 +25,8 @@ add_executable(ddos_unit_tests
     unit/test_ModelInferencer.cpp
     unit/AppLoggerTests.hpp
     unit/AppLoggerTests.cpp
+    unit/test_SystemMetricsCollector.hpp
+    unit/test_SystemMetricsCollector.cpp
 )
 
 target_link_libraries(ddos_unit_tests PRIVATE
