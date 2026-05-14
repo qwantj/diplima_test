@@ -31,6 +31,14 @@
 #include "monitor_ui/EventHistoryWidget.hpp"
 #include "monitor_ui/ThemePalette.hpp"
 
+enum class SidebarIcon {
+    Dashboard,
+    DeepAnalytics,
+    EventLog,
+    SecurityIncidents,
+    SessionsHistory
+};
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -160,7 +168,7 @@ void MainWindow::setupUI() {
     sidebarList_->setProperty("cssClass", "sidebarList");
     sidebarList_->setIconSize(QSize(22, 22));
 
-    auto addSidebarItem = [this](const QString& text, const QColor& color, int iconType, const QString& tooltip) {
+    auto addSidebarItem = [this](const QString& text, const QColor& color, SidebarIcon iconType, const QString& tooltip) {
         auto* item = new QListWidgetItem(sidebarList_);
         QPixmap pixmap(24, 24);
         pixmap.fill(Qt::transparent);
@@ -169,23 +177,30 @@ void MainWindow::setupUI() {
         p.setBrush(color);
         p.setPen(Qt::NoPen);
 
-        if (iconType == 0) { // Dashboard (Blocks)
-            p.drawRoundedRect(2, 2, 8, 8, 2, 2); p.drawRoundedRect(12, 2, 8, 8, 2, 2);
-            p.drawRoundedRect(2, 12, 8, 8, 2, 2); p.setBrush(QColor(80, 80, 80)); p.drawRoundedRect(12, 12, 8, 8, 2, 2);
-        } else if (iconType == 1) { // Analytics (Chart)
-            p.setPen(QPen(color, 2)); p.setBrush(Qt::NoBrush);
-            p.drawLine(4, 18, 8, 10); p.drawLine(8, 10, 14, 14); p.drawLine(14, 14, 20, 4);
-        } else if (iconType == 2) { // Log
-            p.drawRoundedRect(5, 2, 14, 20, 2, 2); p.setBrush(QColor(30, 30, 30));
-            p.drawRect(8, 8, 8, 2); p.drawRect(8, 12, 8, 2); p.drawRect(8, 16, 5, 2);
-        } else if (iconType == 3) { // Shield
-            QPainterPath path; path.moveTo(12, 2); path.lineTo(20, 5); path.lineTo(20, 12);
-            path.quadTo(20, 20, 12, 22); path.quadTo(4, 20, 4, 12); path.lineTo(4, 5); path.closeSubpath();
-            p.drawPath(path);
-        } else { // Sessions
-            p.drawRoundedRect(4, 4, 4, 4, 1, 1); p.drawRect(10, 5, 10, 2);
-            p.drawRoundedRect(4, 10, 4, 4, 1, 1); p.drawRect(10, 11, 10, 2);
-            p.drawRoundedRect(4, 16, 4, 4, 1, 1); p.drawRect(10, 17, 10, 2);
+        switch (iconType) {
+            case SidebarIcon::Dashboard:
+                p.drawRoundedRect(2, 2, 8, 8, 2, 2); p.drawRoundedRect(12, 2, 8, 8, 2, 2);
+                p.drawRoundedRect(2, 12, 8, 8, 2, 2); p.setBrush(QColor(80, 80, 80)); p.drawRoundedRect(12, 12, 8, 8, 2, 2);
+                break;
+            case SidebarIcon::DeepAnalytics:
+                p.setPen(QPen(color, 2)); p.setBrush(Qt::NoBrush);
+                p.drawLine(4, 18, 8, 10); p.drawLine(8, 10, 14, 14); p.drawLine(14, 14, 20, 4);
+                break;
+            case SidebarIcon::EventLog:
+                p.drawRoundedRect(5, 2, 14, 20, 2, 2); p.setBrush(QColor(30, 30, 30));
+                p.drawRect(8, 8, 8, 2); p.drawRect(8, 12, 8, 2); p.drawRect(8, 16, 5, 2);
+                break;
+            case SidebarIcon::SecurityIncidents: {
+                QPainterPath path; path.moveTo(12, 2); path.lineTo(20, 5); path.lineTo(20, 12);
+                path.quadTo(20, 20, 12, 22); path.quadTo(4, 20, 4, 12); path.lineTo(4, 5); path.closeSubpath();
+                p.drawPath(path);
+                break;
+            }
+            case SidebarIcon::SessionsHistory:
+                p.drawRoundedRect(4, 4, 4, 4, 1, 1); p.drawRect(10, 5, 10, 2);
+                p.drawRoundedRect(4, 10, 4, 4, 1, 1); p.drawRect(10, 11, 10, 2);
+                p.drawRoundedRect(4, 16, 4, 4, 1, 1); p.drawRect(10, 17, 10, 2);
+                break;
         }
         item->setIcon(QIcon(pixmap));
         item->setText("  " + text);
@@ -193,11 +208,11 @@ void MainWindow::setupUI() {
         sidebarList_->addItem(item);
     };
 
-    addSidebarItem("Dashboard", ThemePalette::green(), 0, "Главная панель: Общее состояние и основные графики");
-    addSidebarItem("Deep Analytics", ThemePalette::blue(), 1, "Глубокая аналитика: Топология сети, SLO и распределение трафика");
-    addSidebarItem("Event Log", ThemePalette::peach(), 2, "Лог событий: Подробный список всех классифицированных потоков");
-    addSidebarItem("Security Incidents", ThemePalette::blue(), 3, "Инциденты безопасности: История обнаруженных атак с таймлайном");
-    addSidebarItem("Sessions History", ThemePalette::mauve(), 4, "История сессий: Список всех прошлых запусков системы");
+    addSidebarItem("Dashboard", ThemePalette::green(), SidebarIcon::Dashboard, "Главная панель: Общее состояние и основные графики");
+    addSidebarItem("Deep Analytics", ThemePalette::blue(), SidebarIcon::DeepAnalytics, "Глубокая аналитика: Топология сети, SLO и распределение трафика");
+    addSidebarItem("Event Log", ThemePalette::peach(), SidebarIcon::EventLog, "Лог событий: Подробный список всех классифицированных потоков");
+    addSidebarItem("Security Incidents", ThemePalette::blue(), SidebarIcon::SecurityIncidents, "Инциденты безопасности: История обнаруженных атак с таймлайном");
+    addSidebarItem("Sessions History", ThemePalette::mauve(), SidebarIcon::SessionsHistory, "История сессий: Список всех прошлых запусков системы");
     
     sidebarList_->setCurrentRow(0);
     contentLayout->addWidget(sidebarList_);
