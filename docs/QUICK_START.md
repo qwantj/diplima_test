@@ -2,52 +2,27 @@
 
   
 
-Дата актуализации: 08.04.2026
-
-  
+Дата актуализации: 15.05.2026
 
 ## 1. Проверка окружения
 
-  
-
 ```cmd
-
 cmake --version
-
 ```
 
-  
-
 Убедитесь, что установлены:
-
-  
-
 - Visual Studio 2022 (MSVC)
-
-- Qt 6.10.x (MSVC)
-
-- PostgreSQL
-
+- Qt 6.6+ (MSVC 2022 64-bit)
+- PostgreSQL 14+
 - Npcap
-
-  
+- vcpkg
 
 ## 2. Сборка
 
-  
-
 ```cmd
-
 cd c:\Dev\CXX\diploma_test
-
-mkdir build
-
-cd build
-
-cmake -G "Visual Studio 17 2022" -A x64 ..
-
-cmake --build . --config Release
-
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --config Release
 ```
 
   

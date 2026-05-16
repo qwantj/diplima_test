@@ -65,7 +65,7 @@ export DDOS_DB_PASS=my_secure_password
 - [Техническая спецификация](docs/DOCUMENTATION.md)
 - [Графические материалы (диаграммы ВКР)](docs/diagrams.md)
 - [Алгоритм извлечения признаков](docs/FeatureExtractionAlgorithm.md)
-- [Отчет о соответствии заданию ВКР](docs/VKR_COMPLIANCE.md)
+- [Отчет о соответствии заданию ВКР](docs/academic/VKR_COMPLIANCE.md)
 
 ## Лицензия
 
