@@ -2,7 +2,7 @@
 
   
 
-Дата актуализации: 10.05.2026
+Дата актуализации: 20.05.2026
 
   
 
@@ -18,8 +18,6 @@ src/
 
   monitor_main.cpp
 
-  main.cpp
-
   concurrentqueue.h
 
   core/
@@ -27,6 +25,10 @@ src/
     DetectionEngine.hpp
 
     DetectionEngine.cpp
+
+    FirewallManager.hpp
+
+    FirewallManager.cpp
 
   network/
 
@@ -70,6 +72,10 @@ src/
 
     DatabaseManager.cpp
 
+    ConfigManager.hpp
+
+    ConfigManager.cpp
+
     SystemMetricsCollector.hpp
 
     SystemMetricsCollector.cpp
@@ -81,6 +87,12 @@ src/
     FileBuffer.hpp
 
     FileBuffer.cpp
+
+    CSVUtils.hpp
+
+    NetStructs.hpp
+
+    PacketBuffer.hpp
 
   monitor_ui/
 
@@ -130,6 +142,16 @@ DetectionEngine:
 
   
 
+FirewallManager:
+
+  
+
+- управление правилами фильтрации (блокировка IP);
+
+- поддержка списка активных блокировок.
+
+  
+
 ### 2.2 Модуль сетевого захвата (network)
 
   
@@ -152,7 +174,7 @@ FeatureExtractor:
 
 - сбор статистики окна;
 
-- расчет 16 признаков;
+- расчет 16 признаков (агрегация по окну и flow-tracking);
 
 - нормализация через scaler JSON;
 
@@ -226,6 +248,14 @@ DatabaseManager:
 
   
 
+ConfigManager:
+
+  
+
+- загрузка и сохранение настроек из `config.json`.
+
+  
+
 SystemMetricsCollector:
 
   
@@ -238,7 +268,15 @@ AppLogger:
 
   
 
-- централизованное логирование.
+- централизованное логирование (spdlog).
+
+  
+
+CSVUtils:
+
+  
+
+- безопасный экспорт данных в CSV (защита от инъекций).
 
   
 
@@ -304,7 +342,7 @@ ThemePalette:
 
 - Протокол Protocol serialize/deserialize.
 
-- DetectionResult и связанные структуры из DetectionEngine.hpp.
+- DetectionResult и связанные структуры из Protocol.hpp / NetStructs.hpp.
 
 - Согласованность порядка признаков между FeatureExtractor и scaler/model.
 
@@ -314,10 +352,10 @@ ThemePalette:
 
   
 
-- collector_main -> DetectionEngine + DatabaseManager + TcpServer
+- collector_main -> DetectionEngine + DatabaseManager + TcpServer + ConfigManager
 
-- monitor_main -> DataBridge + monitor_ui widgets
+- monitor_main -> DataBridge + monitor_ui widgets + ConfigManager
 
-- DetectionEngine -> TrafficMonitor + FeatureExtractor + ModelInferencer + PcapDumper
+- DetectionEngine -> TrafficMonitor + FeatureExtractor + ModelInferencer + PcapDumper + FirewallManager
 
 - DataBridge -> TcpClient + DatabaseManager + Protocol

@@ -118,7 +118,7 @@ void HeatmapWidget::paintEvent(QPaintEvent*) {
     }
 
     // Y axis labels (port numbers)
-    p.setPen(ThemePalette::textSecondary());
+    p.setPen(ThemePalette::subtext1());
     QFont f = p.font(); f.setPointSize(8); p.setFont(f);
     for (int i = 0; i < nPorts; i++) {
         int y = plotRect.top() + (int)(i * cellH + cellH/2);
@@ -127,7 +127,7 @@ void HeatmapWidget::paintEvent(QPaintEvent*) {
     }
 
     // X axis — time labels
-    p.setPen(ThemePalette::textSecondary());
+    p.setPen(ThemePalette::subtext1());
     p.drawText(QRect(plotRect.left(), plotRect.bottom()+4, 60, 16),
                Qt::AlignLeft, minTime_.toString("HH:mm:ss"));
     p.drawText(QRect(plotRect.right()-60, plotRect.bottom()+4, 60, 16),
@@ -614,12 +614,12 @@ void DashboardWidget::setupDashboard() {
         
         titleLbl = new QLabel(titleText);
         titleLbl->setAlignment(Qt::AlignLeft);
-        titleLbl->setStyleSheet(QString("color: %1; font-weight: bold; font-size: 14px; border: none; background: transparent;").arg(ThemePalette::text().name()));
+        titleLbl->setProperty("cssClass", "donutTitle");
         l->addWidget(titleLbl);
         
         chart = new QChart(); chart->setAnimationOptions(QChart::NoAnimation);
         chart->setBackgroundBrush(Qt::transparent); chart->legend()->setAlignment(Qt::AlignRight);
-        chart->legend()->setLabelBrush(QBrush(ThemePalette::subtext0())); chart->setMargins(QMargins(0,0,0,0));
+        chart->legend()->setLabelBrush(QBrush(ThemePalette::textPrimary())); chart->setMargins(QMargins(0,0,0,0));
         
         pie = new QPieSeries(); pie->setHoleSize(0.70); chart->addSeries(pie);
         
@@ -703,7 +703,7 @@ void DashboardWidget::setupAnalytics() {
     auto* pL = new QVBoxLayout(portsGrp);
     topPortsChart_ = new QChart(); topPortsChart_->setBackgroundBrush(Qt::transparent);
     topPortsChart_->legend()->setAlignment(Qt::AlignBottom);
-    topPortsChart_->legend()->setLabelBrush(QBrush(ThemePalette::subtext0()));
+    topPortsChart_->legend()->setLabelBrush(QBrush(ThemePalette::textPrimary()));
     topPortsPie_ = new QPieSeries(); topPortsPie_->setHoleSize(0.4);
     topPortsChart_->addSeries(topPortsPie_);
     auto* pv = new QChartView(topPortsChart_);
@@ -826,20 +826,25 @@ void DashboardWidget::applyTheme(ThemeMode mode) {
     dashPen.setStyle(Qt::DashLine);
     attackConfidenceUpper_->setPen(dashPen);
     
-    timeAxis_->setLabelsColor(ThemePalette::textSecondary());
-    ppsAxis_->setLabelsColor(ThemePalette::textSecondary());
-    confAxis_->setLabelsColor(ThemePalette::textSecondary());
+    timeAxis_->setLabelsColor(ThemePalette::textPrimary());
+    ppsAxis_->setLabelsColor(ThemePalette::textPrimary());
+    confAxis_->setLabelsColor(ThemePalette::textPrimary());
     
-    if (bwTimeAxis_) bwTimeAxis_->setLabelsColor(ThemePalette::textSecondary());
-    if (bwAxis_) bwAxis_->setLabelsColor(ThemePalette::textSecondary());
-    if (sizeCatAxis_) sizeCatAxis_->setLabelsColor(ThemePalette::textSecondary());
-    if (sizeValAxis_) sizeValAxis_->setLabelsColor(ThemePalette::textSecondary());
+    if (bwTimeAxis_) bwTimeAxis_->setLabelsColor(ThemePalette::textPrimary());
+    if (bwAxis_) bwAxis_->setLabelsColor(ThemePalette::textPrimary());
+    if (sizeCatAxis_) sizeCatAxis_->setLabelsColor(ThemePalette::textPrimary());
+    if (sizeValAxis_) sizeValAxis_->setLabelsColor(ThemePalette::textPrimary());
     
     if (bandwidthChart_) bandwidthChart_->setBackgroundBrush(ThemePalette::crust());
     if (packetSizeChart_) packetSizeChart_->setBackgroundBrush(ThemePalette::crust());
     
     if (bandwidthSeries_) bandwidthSeries_->setPen(QPen(ThemePalette::sapphire(), 2));
     if (packetSizeSet_) packetSizeSet_->setColor(ThemePalette::sapphire());
+
+    if (cpuChart_) cpuChart_->legend()->setLabelBrush(QBrush(ThemePalette::textPrimary()));
+    if (ramChart_) ramChart_->legend()->setLabelBrush(QBrush(ThemePalette::textPrimary()));
+    if (trafficChart_) trafficChart_->legend()->setLabelBrush(QBrush(ThemePalette::textPrimary()));
+    if (topPortsChart_) topPortsChart_->legend()->setLabelBrush(QBrush(ThemePalette::textPrimary()));
     
     // Also re-apply the global style to widgets because properties changed
     qApp->setStyleSheet(ThemePalette::globalStyleSheet());

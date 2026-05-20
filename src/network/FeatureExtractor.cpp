@@ -238,34 +238,84 @@ std::vector<std::vector<double>> FeatureExtractor::computeNormalizedFeaturesBatc
 }
 
 std::vector<double> FeatureExtractor::computeNormalizedFeatures() {
-    auto batch = computeNormalizedFeaturesBatch();
-    if (batch.empty()) {
-        return std::vector<double>(scalerLoaded_ ? scaler_.mean.size() : 8, 0.0);
+    size_t expectedFeatures = scalerLoaded_ ? scaler_.mean.size() : 16;
+    if (activeFlows_.empty()) {
+        return std::vector<double>(expectedFeatures, 0.0);
     }
-    
-    // For single-vector output (to not break DetectionEngine), return the features
-    // of the flow with the highest packet count (Top Talker Flow).
-    size_t topFlowIdx = 0;
-    uint64_t maxPackets = 0;
-    
-    int idx = 0;
+
+    auto now = std::chrono::steady_clock::now();
+    double flowDuration = windowStarted_ ? std::chrono::duration<double>(now - windowStart_).count() * 1e6 : 2000000.0;
+    if (flowDuration <= 0.0) flowDuration = 1.0;
+
+    uint64_t fwdPackets = 0, bwdPackets = 0, fwdBytes = 0, bwdBytes = 0;
+    uint64_t synPackets = 0, ackPackets = 0, finPackets = 0, rstPackets = 0, pshPackets = 0, urgPackets = 0;
+    uint64_t totalPayloadBytes = 0;
+    std::vector<uint64_t> byteCounts(256, 0);
+    double tcpWindowSizeTotal = 0.0;
+
     for (const auto& [key, stats] : activeFlows_) {
-        uint64_t pkts = stats.fwdPackets + stats.bwdPackets;
-        if (pkts > maxPackets) {
-            maxPackets = pkts;
-            topFlowIdx = idx;
+        fwdPackets += stats.fwdPackets;
+        bwdPackets += stats.bwdPackets;
+        fwdBytes += stats.fwdBytes;
+        bwdBytes += stats.bwdBytes;
+        synPackets += stats.synPackets;
+        ackPackets += stats.ackPackets;
+        finPackets += stats.finPackets;
+        rstPackets += stats.rstPackets;
+        pshPackets += stats.pshPackets;
+        urgPackets += stats.urgPackets;
+        tcpWindowSizeTotal += stats.tcpWindowSizeTotal;
+        totalPayloadBytes += stats.totalPayloadBytes;
+        for (int i = 0; i < 256; i++) {
+            byteCounts[i] += stats.byteCounts[i];
         }
-        idx++;
     }
-    
-    return batch[topFlowIdx];
+
+    double totalFwdPackets = (double)fwdPackets;
+    double totalBwdPackets = (double)bwdPackets;
+    double totalLenFwd = (double)fwdBytes;
+    double totalLenBwd = (double)bwdBytes;
+    double fwdMean = (fwdPackets > 0) ? totalLenFwd / fwdPackets : 0.0;
+    double bwdMean = (bwdPackets > 0) ? totalLenBwd / bwdPackets : 0.0;
+    double flowPps = (fwdPackets + bwdPackets) / (flowDuration / 1e6);
+
+    double entropy = 0.0;
+    if (totalPayloadBytes > 0) {
+        for (uint64_t count : byteCounts) {
+            if (count > 0) {
+                double p = (double)count / totalPayloadBytes;
+                entropy -= p * std::log2(p);
+            }
+        }
+    }
+
+    double avgWindowSize = (fwdPackets + bwdPackets > 0) ? 
+        tcpWindowSizeTotal / (fwdPackets + bwdPackets) : 0.0;
+
+    std::vector<double> raw = {
+        flowDuration, totalFwdPackets, totalBwdPackets, totalLenFwd, totalLenBwd, fwdMean, bwdMean, flowPps,
+        (double)synPackets, (double)ackPackets, (double)finPackets, (double)rstPackets,
+        (double)pshPackets, (double)urgPackets, entropy, avgWindowSize
+    };
+
+    if (!scalerLoaded_) {
+        // If no scaler is loaded and 8 features are expected, resize
+        if (expectedFeatures == 8) raw.resize(8);
+        return raw;
+    }
+
+    std::vector<double> norm(expectedFeatures, 0.0);
+    for (size_t i = 0; i < expectedFeatures && i < raw.size(); i++) {
+        double x = raw[i];
+        if (scaler_.useLog1p) x = std::log1p(std::max(0.0, x));
+        norm[i] = (scaler_.scale[i] != 0.0) ? (x - scaler_.mean[i]) / scaler_.scale[i] : 0.0;
+    }
+
+    return norm;
 }
 
 void FeatureExtractor::fillTelemetry(DetectionResult& result) const {
-    auto now = std::chrono::steady_clock::now();
-    double deltaT = windowStarted_ ?
-        std::chrono::duration<double>(now - windowStart_).count() : 2.0;
-    if (deltaT < 0.001) deltaT = 0.001;
+    double deltaT = 2.0; // Fixed 2-second inference window
 
     result.totalPackets = totalPackets_;
     result.tcpPackets   = tcpPackets_;
