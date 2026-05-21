@@ -1,14 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
 project(DiplomDDoS_Tests)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Widgets Charts Test)
+find_package(libpqxx CONFIG REQUIRED)
 
 add_executable(db_benchmark run_benchmark.cpp)
 target_include_directories(db_benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-target_link_libraries(db_benchmark PRIVATE ddos_core Qt6::Core Qt6::Sql)
+target_link_libraries(db_benchmark PRIVATE ddos_core Qt6::Core Qt6::Network libpqxx::pqxx)
 
 add_executable(db_benchmark_qt unit/benchmark_DatabaseManager.cpp)
-target_link_libraries(db_benchmark_qt PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+target_link_libraries(db_benchmark_qt PRIVATE ddos_core Qt6::Core Qt6::Test Qt6::Network libpqxx::pqxx)
 add_test(NAME db_benchmark_qt COMMAND db_benchmark_qt)
 
 add_executable(ddos_unit_tests
@@ -32,6 +33,7 @@ add_executable(ddos_unit_tests
 target_link_libraries(ddos_unit_tests PRIVATE
     ddos_core
     Qt6::Core
+    Qt6::Network
     Qt6::Test
     nlohmann_json::nlohmann_json
 )

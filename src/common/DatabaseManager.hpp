@@ -1,9 +1,6 @@
 #pragma once
 
 #include <QObject>
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlError>
 #include <QString>
 #include <QDateTime>
 #include <QThread>
@@ -11,6 +8,9 @@
 #include <QMutex>
 #include <vector>
 #include <memory>
+#include <string>
+
+#include <pqxx/pqxx>
 
 #include "common/Protocol.hpp"
 #include "common/FileBuffer.hpp"
@@ -50,12 +50,15 @@ private:
     void ensureTables();
     void startAsyncWriter();
     void stopAsyncWriter();
-    void flushEvents(QSqlDatabase& db);
-    void flushSnapshots(QSqlDatabase& db);
-    void flushSecurityEvents(QSqlDatabase& db);
+    void flushEvents(pqxx::connection& conn);
+    void flushSnapshots(pqxx::connection& conn);
+    void flushSecurityEvents(pqxx::connection& conn);
 
-    QSqlDatabase db_;
-    QString connectionName_;
+    std::string buildConnectionString() const;
+
+    std::unique_ptr<pqxx::connection> conn_;         // main thread connection
+    std::unique_ptr<pqxx::connection> writerConn_;   // writer thread connection
+
     QString host_, dbName_, user_, password_;
     int port_ = 5432;
     bool connected_ = false;

@@ -6,7 +6,7 @@
 #include "common/DatabaseManager.hpp"
 #include "common/AppLogger.hpp"
 
-// We need an application instance to use QTimer and Qt SQL cleanly
+// We need an application instance to use QTimer cleanly
 int main(int argc, char* argv[]) {
     QCoreApplication app(argc, argv);
 

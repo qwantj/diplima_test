@@ -43,7 +43,7 @@ public:
     // Set the scaler type for a specific model
     void setModelScaler(const std::string& modelName);
 
-    int featureCount() const { return scaler_.features.empty() ? 8 : (int)scaler_.features.size(); }
+    int featureCount() const { return scaler_.features.empty() ? 16 : (int)scaler_.features.size(); }
     size_t activeFlowsCount() const { return activeFlows_.size(); }
 
 private:

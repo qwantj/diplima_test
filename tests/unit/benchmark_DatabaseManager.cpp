@@ -1,124 +1,114 @@
 #include <QtTest>
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QSqlError>
-#include <QVariantList>
+#include <pqxx/pqxx>
+#include <memory>
+#include <string>
 
 class BenchmarkDatabaseManager : public QObject {
     Q_OBJECT
 
 private slots:
     void initTestCase() {
-        // Setup SQLite memory database
-        db_ = QSqlDatabase::addDatabase("QSQLITE", "benchmark_db");
-        db_.setDatabaseName(":memory:");
-        QVERIFY(db_.open());
+        // Connect to PostgreSQL
+        try {
+            const char* envPass = std::getenv("DDOS_DB_PASS");
+            std::string dbPass = envPass ? envPass : "postgres";
+            conn_ = std::make_unique<pqxx::connection>(
+                "host=localhost port=5432 dbname=postgres user=postgres password=" + dbPass);
+            
+            if (!conn_->is_open()) {
+                QSKIP("Cannot connect to PostgreSQL - skipping benchmark");
+                return;
+            }
 
-        QSqlQuery q(db_);
-        q.exec("CREATE TABLE events ("
-               "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-               "session_id INTEGER, "
-               "timestamp TEXT, "
-               "label INTEGER, "
-               "confidence REAL, "
-               "pps REAL, "
-               "total_packets INTEGER, "
-               "features TEXT, "
-               "model_name TEXT"
-               ")");
+            // Create test tables
+            pqxx::work tx(*conn_);
+            tx.exec("CREATE TABLE IF NOT EXISTS events_bench ("
+                   "id SERIAL PRIMARY KEY, "
+                   "session_id INTEGER, "
+                   "timestamp TEXT, "
+                   "label INTEGER, "
+                   "confidence REAL, "
+                   "pps REAL, "
+                   "total_packets BIGINT, "
+                   "features TEXT, "
+                   "model_name TEXT"
+                   ")");
 
-        q.exec("CREATE TABLE stats_snapshots ("
-               "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-               "session_id INTEGER, "
-               "timestamp TEXT, "
-               "packets_per_s REAL, "
-               "total_packets INTEGER, "
-               "current_label INTEGER"
-               ")");
+            tx.exec("CREATE TABLE IF NOT EXISTS snapshots_bench ("
+                   "id SERIAL PRIMARY KEY, "
+                   "session_id INTEGER, "
+                   "timestamp TEXT, "
+                   "packets_per_s REAL, "
+                   "total_packets BIGINT, "
+                   "current_label INTEGER"
+                   ")");
+            tx.commit();
+        } catch (const std::exception& e) {
+            QSKIP(("Cannot connect to PostgreSQL: " + std::string(e.what())).c_str());
+        }
     }
 
     void cleanupTestCase() {
-        db_.close();
-        QSqlDatabase::removeDatabase("benchmark_db");
+        if (conn_ && conn_->is_open()) {
+            try {
+                pqxx::work tx(*conn_);
+                tx.exec("DROP TABLE IF EXISTS events_bench");
+                tx.exec("DROP TABLE IF EXISTS snapshots_bench");
+                tx.commit();
+                conn_->close();
+            } catch (...) {}
+        }
     }
 
     void cleanup() {
-        QSqlQuery q(db_);
-        q.exec("DELETE FROM events");
-        q.exec("DELETE FROM stats_snapshots");
+        if (!conn_ || !conn_->is_open()) return;
+        try {
+            pqxx::work tx(*conn_);
+            tx.exec("DELETE FROM events_bench");
+            tx.exec("DELETE FROM snapshots_bench");
+            tx.commit();
+        } catch (...) {}
     }
 
     void benchmarkRowByRowInsert() {
+        if (!conn_ || !conn_->is_open()) QSKIP("No DB connection");
         const int NUM_RECORDS = 1000;
 
         QBENCHMARK {
-            db_.transaction();
-            QSqlQuery q(db_);
-            q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-
+            pqxx::work tx(*conn_);
             for (int i = 0; i < NUM_RECORDS; ++i) {
-                q.bindValue(0, 1);
-                q.bindValue(1, "2024-05-11 10:00:00");
-                q.bindValue(2, 0);
-                q.bindValue(3, 0.99f);
-                q.bindValue(4, 100.0);
-                q.bindValue(5, i);
-                q.bindValue(6, "[1,2,3]");
-                q.bindValue(7, "model_v1");
-                q.exec();
+                tx.exec_params(
+                    "INSERT INTO events_bench (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                    1, "2024-05-11 10:00:00", 0, 0.99f, 100.0, static_cast<int64_t>(i), "[1,2,3]", "model_v1"
+                );
             }
-            db_.commit();
+            tx.commit();
         }
     }
 
-    void benchmarkBatchInsert() {
+    void benchmarkStreamToInsert() {
+        if (!conn_ || !conn_->is_open()) QSKIP("No DB connection");
         const int NUM_RECORDS = 1000;
 
         QBENCHMARK {
-            QVariantList sessionIds, timestamps, labels, confidences, ppsValues, totalPackets, features, modelNames;
-
-            // Simulation of our new reserve optimization
-            sessionIds.reserve(NUM_RECORDS);
-            timestamps.reserve(NUM_RECORDS);
-            labels.reserve(NUM_RECORDS);
-            confidences.reserve(NUM_RECORDS);
-            ppsValues.reserve(NUM_RECORDS);
-            totalPackets.reserve(NUM_RECORDS);
-            features.reserve(NUM_RECORDS);
-            modelNames.reserve(NUM_RECORDS);
+            pqxx::work tx(*conn_);
+            auto stream = pqxx::stream_to::table(tx, {"events_bench"},
+                {"session_id", "timestamp", "label", "confidence", "pps", "total_packets", "features", "model_name"});
 
             for (int i = 0; i < NUM_RECORDS; ++i) {
-                sessionIds << 1;
-                timestamps << "2024-05-11 10:00:00";
-                labels << 0;
-                confidences << 0.99f;
-                ppsValues << 100.0;
-                totalPackets << i;
-                features << "[1,2,3]";
-                modelNames << "model_v1";
+                stream << std::make_tuple(
+                    1, std::string("2024-05-11 10:00:00"), 0, 0.99f, 100.0, static_cast<int64_t>(i), 
+                    std::string("[1,2,3]"), std::string("model_v1")
+                );
             }
-
-            db_.transaction();
-            QSqlQuery q(db_);
-            q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-
-            q.bindValue(0, sessionIds);
-            q.bindValue(1, timestamps);
-            q.bindValue(2, labels);
-            q.bindValue(3, confidences);
-            q.bindValue(4, ppsValues);
-            q.bindValue(5, totalPackets);
-            q.bindValue(6, features);
-            q.bindValue(7, modelNames);
-
-            q.execBatch();
-            db_.commit();
+            stream.complete();
+            tx.commit();
         }
     }
 
-    void benchmarkThrottledBatchInsert() {
+    void benchmarkThrottledStreamToInsert() {
+        if (!conn_ || !conn_->is_open()) QSKIP("No DB connection");
         const int NUM_RECORDS = 5000;
         const int MAX_EVENTS_PER_FLUSH = 1000;
 
@@ -127,43 +117,19 @@ private slots:
             while (recordsProcessed < NUM_RECORDS) {
                 int currentBatchSize = qMin(MAX_EVENTS_PER_FLUSH, NUM_RECORDS - recordsProcessed);
 
-                QVariantList sessionIds, timestamps, labels, confidences, ppsValues, totalPackets, features, modelNames;
-                sessionIds.reserve(currentBatchSize);
-                timestamps.reserve(currentBatchSize);
-                labels.reserve(currentBatchSize);
-                confidences.reserve(currentBatchSize);
-                ppsValues.reserve(currentBatchSize);
-                totalPackets.reserve(currentBatchSize);
-                features.reserve(currentBatchSize);
-                modelNames.reserve(currentBatchSize);
+                pqxx::work tx(*conn_);
+                auto stream = pqxx::stream_to::table(tx, {"events_bench"},
+                    {"session_id", "timestamp", "label", "confidence", "pps", "total_packets", "features", "model_name"});
 
                 for (int i = 0; i < currentBatchSize; ++i) {
-                    sessionIds << 1;
-                    timestamps << "2024-05-11 10:00:00";
-                    labels << 0;
-                    confidences << 0.99f;
-                    ppsValues << 100.0;
-                    totalPackets << (recordsProcessed + i);
-                    features << "[1,2,3]";
-                    modelNames << "model_v1";
+                    stream << std::make_tuple(
+                        1, std::string("2024-05-11 10:00:00"), 0, 0.99f, 100.0, 
+                        static_cast<int64_t>(recordsProcessed + i), 
+                        std::string("[1,2,3]"), std::string("model_v1")
+                    );
                 }
-
-                db_.transaction();
-                QSqlQuery q(db_);
-                q.prepare("INSERT INTO events (session_id, timestamp, label, confidence, pps, total_packets, features, model_name) "
-                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-
-                q.bindValue(0, sessionIds);
-                q.bindValue(1, timestamps);
-                q.bindValue(2, labels);
-                q.bindValue(3, confidences);
-                q.bindValue(4, ppsValues);
-                q.bindValue(5, totalPackets);
-                q.bindValue(6, features);
-                q.bindValue(7, modelNames);
-
-                q.execBatch();
-                db_.commit();
+                stream.complete();
+                tx.commit();
 
                 recordsProcessed += currentBatchSize;
             }
@@ -171,62 +137,43 @@ private slots:
     }
 
     void benchmarkSnapshotRowByRowInsert() {
+        if (!conn_ || !conn_->is_open()) QSKIP("No DB connection");
         const int NUM_RECORDS = 1000;
 
         QBENCHMARK {
-            db_.transaction();
-            QSqlQuery q(db_);
-            q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
-
+            pqxx::work tx(*conn_);
             for (int i = 0; i < NUM_RECORDS; ++i) {
-                q.bindValue(0, 1);
-                q.bindValue(1, "2024-05-11 10:00:00");
-                q.bindValue(2, 100.5f);
-                q.bindValue(3, i);
-                q.bindValue(4, 0);
-                q.exec();
+                tx.exec_params(
+                    "INSERT INTO snapshots_bench (session_id, timestamp, packets_per_s, total_packets, current_label) "
+                    "VALUES ($1, $2, $3, $4, $5)",
+                    1, "2024-05-11 10:00:00", 100.5f, static_cast<int64_t>(i), 0
+                );
             }
-            db_.commit();
+            tx.commit();
         }
     }
 
-    void benchmarkSnapshotBatchInsert() {
+    void benchmarkSnapshotStreamToInsert() {
+        if (!conn_ || !conn_->is_open()) QSKIP("No DB connection");
         const int NUM_RECORDS = 1000;
 
         QBENCHMARK {
-            QVariantList sessionIds, timestamps, ppsValues, totalPackets, labels;
-
-            sessionIds.reserve(NUM_RECORDS);
-            timestamps.reserve(NUM_RECORDS);
-            ppsValues.reserve(NUM_RECORDS);
-            totalPackets.reserve(NUM_RECORDS);
-            labels.reserve(NUM_RECORDS);
+            pqxx::work tx(*conn_);
+            auto stream = pqxx::stream_to::table(tx, {"snapshots_bench"},
+                {"session_id", "timestamp", "packets_per_s", "total_packets", "current_label"});
 
             for (int i = 0; i < NUM_RECORDS; ++i) {
-                sessionIds << 1;
-                timestamps << "2024-05-11 10:00:00";
-                ppsValues << 100.5f;
-                totalPackets << i;
-                labels << 0;
+                stream << std::make_tuple(
+                    1, std::string("2024-05-11 10:00:00"), 100.5f, static_cast<int64_t>(i), 0
+                );
             }
-
-            db_.transaction();
-            QSqlQuery q(db_);
-            q.prepare("INSERT INTO stats_snapshots (session_id, timestamp, packets_per_s, total_packets, current_label) VALUES (?,?,?,?,?)");
-
-            q.bindValue(0, sessionIds);
-            q.bindValue(1, timestamps);
-            q.bindValue(2, ppsValues);
-            q.bindValue(3, totalPackets);
-            q.bindValue(4, labels);
-
-            q.execBatch();
-            db_.commit();
+            stream.complete();
+            tx.commit();
         }
     }
 
 private:
-    QSqlDatabase db_;
+    std::unique_ptr<pqxx::connection> conn_;
 };
 
 QTEST_MAIN(BenchmarkDatabaseManager)

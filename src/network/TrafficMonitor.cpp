@@ -159,7 +159,7 @@ bool TrafficMonitor::replayPcap(const std::string& filePath) {
 
         if (packetQueue_.size_approx() < MAX_QUEUE_SIZE) {
             PacketBuffer* buf = getBuffer();
-            buf->assign(rawPacket.getRawData(), rawPacket.getRawDataLen(), std::chrono::system_clock::now());
+            buf->assign(rawPacket.getRawData(), rawPacket.getRawDataLen(), std::chrono::system_clock::now(), rawPacket.getLinkLayerType());
             packetQueue_.enqueue(buf);
             totalCaptured_++;
         } else {
@@ -211,7 +211,7 @@ void TrafficMonitor::onPacketArrived(pcpp::RawPacket* packet, pcpp::PcapLiveDevi
     auto* self = static_cast<TrafficMonitor*>(cookie);
     if (self->packetQueue_.size_approx() < MAX_QUEUE_SIZE) {
         PacketBuffer* buf = self->getBuffer();
-        buf->assign(packet->getRawData(), packet->getRawDataLen(), std::chrono::system_clock::now());
+        buf->assign(packet->getRawData(), packet->getRawDataLen(), std::chrono::system_clock::now(), packet->getLinkLayerType());
         self->packetQueue_.enqueue(buf);
         self->totalCaptured_++;
     } else {

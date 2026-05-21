@@ -1,89 +1,96 @@
 # Индекс документации
 
-  
+**Версия:** 2.2  
+**Дата актуализации:** 21.05.2026
 
-Дата актуализации: 08.04.2026
+---
 
-  
+## Документация по DDoS Detection System
 
-## 1. Основные документы
+### 📖 Основные документы
 
-  
+| Документ | Описание | Аудитория |
+|---|---|---|
+| [README.md](../README.md) | Обзор проекта, быстрый старт, структура | Все |
+| [DOCUMENTATION.md](DOCUMENTATION.md) | Полная техническая спецификация | Все |
+| [USER_GUIDE.md](USER_GUIDE.md) | Руководство по использованию системы | Пользователи |
 
-| Документ | Назначение |
+### 🏗️ Архитектура и дизайн
 
+| Документ | Описание | Аудитория |
+|---|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Детальная архитектура, многопоточность, зависимости | Разработчики |
+| [API_REFERENCE.md](API_REFERENCE.md) | Протокол обмена Collector↔Monitor (TCP/JSON) | Разработчики |
+| [CLASS_REFERENCE.md](CLASS_REFERENCE.md) | Справочник по всем классам и методам | Разработчики |
+| [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) | Схема PostgreSQL, SQL-запросы, управление данными | Разработчики, Администраторы |
+
+### 🔬 Алгоритмы и ML
+
+| Документ | Описание | Аудитория |
+|---|---|---|
+| [FeatureExtractionAlgorithm.md](FeatureExtractionAlgorithm.md) | Алгоритм извлечения 8 признаков, нормализация | Разработчики, Исследователи |
+
+### 🔧 Разработка
+
+| Документ | Описание | Аудитория |
+|---|---|---|
+| [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | Настройка среды, соглашения, добавление признаков и виджетов | Разработчики |
+| [TESTING.md](TESTING.md) | Тестирование системы | Разработчики |
+
+### 🚀 Установка и эксплуатация
+
+| Документ | Описание | Аудитория |
+|---|---|---|
+| [windows-setup.md](windows-setup.md) | Пошаговая установка на Windows | Администраторы |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Устранение типичных неполадок | Все |
+
+### 📊 Материалы ВКР
+
+| Документ | Описание |
 |---|---|
+| [diagrams.md](diagrams.md) | Диаграммы и схемы для документации ВКР |
+| [academic/](academic/) | Академические материалы |
+| [PLANS/](../PLANS/) | История планирования и реализации |
 
-| README.md | Общее описание комплекса, сборка, запуск |
+---
 
-| QUICK_START.md | Минимальный сценарий старта |
+## Карта зависимостей документов
 
-| TROUBLESHOOTING.md | Диагностика и исправление ошибок |
+```
+README.md
+│
+├── DOCUMENTATION.md (основная спецификация)
+│   ├── ARCHITECTURE.md
+│   │   ├── API_REFERENCE.md
+│   │   └── CLASS_REFERENCE.md
+│   ├── DATABASE_SCHEMA.md
+│   └── FeatureExtractionAlgorithm.md
+│
+├── USER_GUIDE.md
+├── DEVELOPER_GUIDE.md
+│   ├── CLASS_REFERENCE.md
+│   └── FeatureExtractionAlgorithm.md
+│
+├── windows-setup.md
+└── TROUBLESHOOTING.md
+```
 
-| docs/DOCUMENTATION.md | Полная техническая документация |
+---
 
-| docs/Codebase.md | Структура исходного кода |
+## Статус документов
 
-| docs/FeatureExtractionAlgorithm.md | Формализация алгоритма признаков |
-
-| docs/diagrams.md | Диаграммы для ПЗ/презентации |
-
-| PZ_SUMMARY_RU.md | Сводный документ для пояснительной записки |
-
-  
-
-## 2. Дополнительные аналитические документы
-
-  
-
-| Документ | Назначение |
-
-|---|---|
-
-| RECOMMENDATIONS.md | Направления развития комплекса |
-
-| implementation_plan.md | План работ и статус реализации |
-
-| Refactoring DDoS Detector Project.md | План структурного рефакторинга |
-
-| MLP Model DDoS Detection Issue.md | Разбор различий RF и MLP на реальном трафике |
-
-| diagrams.md | Краткий вход в графические материалы |
-
-  
-
-## 3. Куда идти по задачам
-
-  
-
-- Нужно быстро запустить проект: QUICK_START.md
-
-- Нужны CLI-аргументы collector: README.md
-
-- Падает сборка CMake/Qt: TROUBLESHOOTING.md
-
-- Нужно объяснить архитектуру на защите: docs/DOCUMENTATION.md
-
-- Нужно показать структуру исходников: docs/Codebase.md
-
-- Нужно объяснить фичи и ML-пайплайн: docs/FeatureExtractionAlgorithm.md
-
-- Нужны Mermaid-диаграммы: docs/diagrams.md
-
-- Нужен единый документ для ПЗ: PZ_SUMMARY_RU.md
-
-  
-
-## 4. Актуальные технические константы
-
-  
-
-- TCP-порт collector по умолчанию: 50050
-
-- Размер окна инференса: 2 секунды
-
-- MAX_QUEUE_SIZE: 500000
-
-- Интервал flush в БД: 5000 мс
-
-- БД по умолчанию: ddos_detection_db
+| Документ | Статус | Последнее обновление |
+|---|---|---|
+| README.md | ✅ Актуален | 21.05.2026 |
+| DOCUMENTATION.md | ✅ Актуален | 21.05.2026 |
+| ARCHITECTURE.md | ✅ Новый | 21.05.2026 |
+| API_REFERENCE.md | ✅ Актуален | 21.05.2026 |
+| CLASS_REFERENCE.md | ✅ Новый | 21.05.2026 |
+| DATABASE_SCHEMA.md | ✅ Новый | 21.05.2026 |
+| FeatureExtractionAlgorithm.md | ✅ Актуален | 21.05.2026 |
+| DEVELOPER_GUIDE.md | ✅ Актуален | 21.05.2026 |
+| USER_GUIDE.md | ✅ Актуален | 21.05.2026 |
+| TROUBLESHOOTING.md | ✅ Актуален | 21.05.2026 |
+| windows-setup.md | ⚠️ Требует проверки | 08.04.2026 |
+| TESTING.md | ⚠️ Требует обновления | 08.04.2026 |
+| diagrams.md | ℹ️ ВКР-материалы | 08.04.2026 |

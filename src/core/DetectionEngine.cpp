@@ -197,21 +197,17 @@ void DetectionEngine::processWindow() {
     }
 
     // [Step 1] Noise Threshold Check
-    // We immediately mark low traffic as Benign without calling the AI model.
     if (result.pps < NOISE_THRESHOLD_PPS) {
         result.label = 0;
         result.confidence = 0.0f;
-        result.features = std::vector<double>(8, 0.0);
+        result.features = std::vector<double>(extractor_.featureCount(), 0.0);
         
-        AppLogger::get()->debug("DetectionEngine: PPS ({:.1f}) below threshold ({:.1f}). Marked as Benign.", 
-            result.pps, NOISE_THRESHOLD_PPS);
-            
         if (dumpEnabled_) dumper_.commitWindow(0);
         if (resultCallback_) resultCallback_(result);
         return;
     }
 
-    // [Step 2] Compute and Normalize Features
+    // [Step 2] Compute and Normalize Features (aggregated across all flows)
     auto features = extractor_.computeNormalizedFeatures();
     if (features.empty() || (int)features.size() != extractor_.featureCount())
         return;

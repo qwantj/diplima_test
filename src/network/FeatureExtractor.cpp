@@ -54,7 +54,7 @@ bool FeatureExtractor::loadScalerParams(const std::string& jsonPath) {
 void FeatureExtractor::processPacket(PacketBuffer* pktBuf) {
     if (!pktBuf) return;
     struct timeval tv = {0, 0};
-    pcpp::RawPacket raw(pktBuf->data(), pktBuf->size(), tv, false);
+    pcpp::RawPacket raw(pktBuf->data(), pktBuf->size(), tv, false, pktBuf->linkType);
     processPacket(raw);
 }
 
@@ -299,8 +299,6 @@ std::vector<double> FeatureExtractor::computeNormalizedFeatures() {
     };
 
     if (!scalerLoaded_) {
-        // If no scaler is loaded and 8 features are expected, resize
-        if (expectedFeatures == 8) raw.resize(8);
         return raw;
     }
 

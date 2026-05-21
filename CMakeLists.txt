@@ -13,13 +13,16 @@ set(CMAKE_AUTORCC ON)
 # ---------- Qt6 ----------
 # Prevent Qt from finding Vulkan headers in msys64 (causes MSVC/MinGW header conflict)
 set(CMAKE_IGNORE_PATH "C:/msys64/mingw64/include" "C:/msys64/mingw64/lib")
-find_package(Qt6 REQUIRED COMPONENTS Core Network Sql Widgets Charts Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Widgets Charts Test)
 
 # ---------- PcapPlusPlus (vcpkg) ----------
 find_package(PcapPlusPlus REQUIRED CONFIG)
 
 # ---------- PostgreSQL (vcpkg) ----------
 find_package(PostgreSQL REQUIRED)
+
+# ---------- libpqxx (vcpkg) ----------
+find_package(libpqxx CONFIG REQUIRED)
 
 # ---------- ONNX Runtime (manual install) ----------
 set(ONNXRUNTIME_ROOT "C:/Lib/onnxruntime" CACHE PATH "ONNX Runtime install root")
@@ -76,11 +79,11 @@ target_include_directories(ddos_core PUBLIC
 target_link_libraries(ddos_core PUBLIC
     Qt6::Core
     Qt6::Network
-    Qt6::Sql
     spdlog::spdlog
     nlohmann_json::nlohmann_json
     PcapPlusPlus::Pcap++
     PostgreSQL::PostgreSQL
+    libpqxx::pqxx
 )
 
 if(ONNXRUNTIME_FOUND)

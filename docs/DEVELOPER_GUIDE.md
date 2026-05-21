@@ -1,56 +1,376 @@
-# Руководство разработчика (Developer Guide)
+# Руководство разработчика
 
-В этом руководстве описана архитектура системы и правила внесения изменений в код.
+**Версия:** 2.2  
+**Дата актуализации:** 21.05.2026
 
-## 1. Структура проекта
+---
 
-Проект разделен на логические модули:
-- **`core/`** — `DetectionEngine` управляет жизненным циклом программы. `FirewallManager` отвечает за блокировку IP.
-- **`network/`** — `TrafficMonitor` (захват PcapPlusPlus), `FeatureExtractor` (извлечение до 16 признаков).
-- **`ml/`** — `ModelInferencer` (загрузка и предсказания ONNX Runtime).
-- **`common/`** — протоколы обмена (`Protocol`), работа с БД PostgreSQL (`DatabaseManager`), управление конфигурацией (`ConfigManager`), сборщик системных метрик.
-- **`monitor_ui/`** — графический интерфейс на Qt 6.
+## 1. Требования к рабочей среде
 
-## 2. Соглашения о стиле кода
+### Обязательные инструменты
 
-- **Стандарт C++:** C++17 (используйте `std::optional`, `std::variant`, `std::filesystem`).
-- **Именование (Naming):**
-  - Классы и структуры: `CamelCase` (например, `TrafficMonitor`).
-  - Методы и функции: `camelCase` (например, `startCapture`).
-  - Переменные: `snake_case` (например, `packet_count`).
-  - Приватные поля класса: суффикс `_` (например, `socket_`).
-- **Управление памятью:** Избегайте сырых указателей (`new`/`delete`). Используйте `std::unique_ptr` и `std::shared_ptr`.
-- **Потокобезопасность:** В проекте используется `moodycamel::ConcurrentQueue` для lock-free передачи пакетов между потоками захвата и анализа. Избегайте использования тяжелых мьютексов (`std::mutex`) в горячем цикле захвата.
+| Инструмент | Версия | Примечания |
+|---|---|---|
+| Visual Studio 2022 | 17.x | Desktop C++ workload |
+| Qt 6 | 6.6+ | Компонент MSVC 2022 64-bit |
+| vcpkg | актуальная | `C:\vcpkg` (рекомендуется) |
+| Git | 2.x | — |
+| CMake | 3.16+ | Входит в VS 2022 |
+| ONNX Runtime | 1.18+ | Ручная установка в `C:\Lib\onnxruntime` |
+| Npcap | 1.75+ | WinPcap-compatible mode |
+| PostgreSQL | 14+ | Опционально, для хранения данных |
 
-## 3. Добавление новых признаков (Features)
+### Структура директорий ONNX Runtime
 
-`FeatureExtractor` рассчитывает 16 признаков (длительность потока, PPS, энтропия, флаги TCP и др.). Модель ML может использовать все 16 или подмножество (например, первые 8) в зависимости от параметров скейлера (`scaler_params.json`).
+```
+C:\Lib\onnxruntime\
+├── include\
+│   └── onnxruntime_cxx_api.h
+│   └── ...
+└── lib\
+    ├── onnxruntime.lib
+    └── onnxruntime.dll
+```
 
-Если вы хотите расширить модель ML новыми признаками:
+---
 
-1. Отредактируйте скрипт Python `scripts/kaggle_pipeline.py` (или Jupyter Notebook) для извлечения нового признака из датасета.
-2. Переобучите модель и сгенерируйте новые файлы `.onnx` и `scaler_params.json`.
-3. Скопируйте модели в папку `models/`.
-4. В коде C++, откройте `src/network/FeatureExtractor.cpp`.
-5. Добавьте расчет новой метрики в метод `computeNormalizedFeatures()`. Убедитесь, что порядок признаков строго совпадает с тем, который ожидает ONNX модель!
+## 2. Первоначальная настройка
 
-## 4. Работа с базой данных (PostgreSQL)
+### Шаг 1: Установка зависимостей vcpkg
 
-- Вся работа с базой инкапсулирована в `src/common/DatabaseManager.cpp`.
-- Таблицы создаются автоматически при старте в методе `initializeDatabase()`.
-- Данные пишутся батчами в отдельном фоновом потоке, чтобы не блокировать GUI. При добавлении новых метрик, обновляйте SQL `INSERT` запросы в `flushEvents()` и `flushStatsSnapshots()`.
+```powershell
+# Предполагается, что vcpkg установлен в C:\vcpkg
+C:\vcpkg\vcpkg install pcapplusplus:x64-windows
+C:\vcpkg\vcpkg install libpqxx:x64-windows
+C:\vcpkg\vcpkg install postgresql:x64-windows
+```
 
-## 5. Активная защита (FirewallManager)
+### Шаг 2: Конфигурация CMake (MSVC)
 
-`FirewallManager` реализует паттерн Singleton и предоставляет методы `blockIp()` и `unblockIp()`. В текущей реализации для Windows блокировка может осуществляться через вызовы `netsh advfirewall`. При завершении программы или сбросе все временные правила очищаются.
+```powershell
+# В Developer PowerShell for VS 2022
+cmake -S C:\Dev\CXX\diploma_test -B C:\Dev\CXX\diploma_test\build_msvc `
+  -G "Visual Studio 17 2022" -A x64 `
+  -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+  -DCMAKE_PREFIX_PATH="C:/Qt/6.6.0/msvc2019_64"
+```
 
-## 6. Управление конфигурацией (ConfigManager)
+### Шаг 3: Сборка
 
-Все параметры (хосты, порты, пути к моделям) хранятся в `config.json`. `ConfigManager` обеспечивает типизированный доступ к настройкам через структуру `AppConfig`. При изменении настроек в GUI монитор может отправить команду `config_update` коллектору.
+```powershell
+cmake --build C:\Dev\CXX\diploma_test\build_msvc --config Release
+# или Debug:
+cmake --build C:\Dev\CXX\diploma_test\build_msvc --config Debug
+```
 
-## 7. Добавление виджетов в Dashboard
+### Шаг 4: Разворачивание Qt (windeployqt)
 
-При добавлении новых графиков в `ddos_monitor`:
-1. Создайте класс виджета, наследующий `QWidget` или `QFrame`.
-2. Если график должен обновляться в реальном времени, добавьте слот `updateData(const nlohmann::json& payload)`.
-3. Подключите сигнал из `DataBridge` к вашему слоту в `DashboardWidget.cpp`.
+```powershell
+cd C:\Dev\CXX\diploma_test\build_msvc\Release
+C:\Qt\6.6.0\msvc2019_64\bin\windeployqt.exe ddos_monitor.exe
+```
+
+---
+
+## 3. Соглашения о коде
+
+### Стандарт
+
+- **C++17** (строго, MSVC `/std:c++17`)
+- Запрещены C-style casts, raw `new`/`delete` (использовать `std::make_unique`)
+- Запрещены глобальные мьютексы в горячем цикле захвата
+
+### Именование
+
+| Элемент | Стиль | Пример |
+|---|---|---|
+| Классы, структуры | PascalCase | `TrafficMonitor`, `DetectionResult` |
+| Методы, функции | camelCase | `startCapture()`, `enqueueEvent()` |
+| Переменные | camelCase | `totalPackets`, `queueSize` |
+| Приватные поля | camelCase + `_` | `socket_`, `dbManager_` |
+| Константы | SCREAMING_SNAKE | `MAX_QUEUE_SIZE`, `FLUSH_INTERVAL_MS` |
+| Файлы | PascalCase.cpp/.hpp | `DetectionEngine.cpp` |
+
+### Управление памятью
+
+```cpp
+// ✅ Правильно
+auto engine = std::make_unique<DetectionEngine>();
+auto conn = std::make_shared<pqxx::connection>(connStr);
+
+// ❌ Запрещено
+DetectionEngine* engine = new DetectionEngine();
+```
+
+### Потокобезопасность
+
+```cpp
+// ✅ Lock-free для горячего цикла (moodycamel)
+moodycamel::ConcurrentQueue<PacketBuffer*> queue;
+queue.enqueue(pkt);      // В потоке захвата
+queue.try_dequeue(pkt);  // В потоке инференса
+
+// ✅ shared_mutex для редких операций (hot swap модели)
+mutable std::shared_mutex mutex_;
+std::shared_lock lock(mutex_);   // predict() — concurrent read
+std::unique_lock lock(mutex_);   // hotSwapModel() — exclusive write
+
+// ❌ Не использовать в горячем цикле
+std::lock_guard<std::mutex> guard(mutex_); // Блокирует захват
+```
+
+---
+
+## 4. Добавление новых признаков для ML
+
+### Шаг 1: Python — обновить пайплайн
+
+```python
+# scripts/kaggle_pipeline.py
+# Добавить новый признак в список features:
+features = [
+    "Flow Duration",
+    "Total Fwd Packets",
+    # ... существующие ...
+    "NEW_FEATURE_NAME",  # ← добавить
+]
+```
+
+### Шаг 2: Python — переобучить модель
+
+```bash
+python scripts/kaggle_pipeline.py
+# Генерирует:
+# models/rf_model.onnx
+# models/rf_scaler_params.json
+```
+
+### Шаг 3: C++ — добавить расчёт в FeatureExtractor
+
+Открыть [`src/network/FeatureExtractor.cpp`](../src/network/FeatureExtractor.cpp), в методе `computeFeaturesBatch()`:
+
+```cpp
+// 1. Добавить накопление метрики в processPacket():
+void FeatureExtractor::processPacket(PacketBuffer* pkt) {
+    // ... существующий код ...
+    // Пример: считать SYN/ACK ratio
+    flow.newMetric += synFlag ? 1 : 0;
+}
+
+// 2. Добавить расчёт в buildFeatureVector():
+double newFeatureValue = (flow.newMetric > 0)
+    ? (double)flow.synPackets / flow.newMetric
+    : 0.0;
+features.push_back(newFeatureValue);
+```
+
+> ⚠️ **Критично:** порядок признаков в C++ должен строго совпадать с порядком в `scaler_params.json`!
+
+### Шаг 4: Обновить scaler JSON
+
+```json
+{
+  "features": ["Flow Duration", ..., "NEW_FEATURE_NAME"],
+  "mean":     [1190047.0, ..., 0.5],
+  "scale":    [6487791.0, ..., 0.2],
+  "use_log1p": false
+}
+```
+
+---
+
+## 5. Добавление новых виджетов в Dashboard
+
+### Шаг 1: Создать виджет
+
+```cpp
+// src/monitor_ui/MyNewWidget.hpp
+#pragma once
+#include <QWidget>
+#include "common/Protocol.hpp"
+
+class MyNewWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit MyNewWidget(QWidget* parent = nullptr);
+
+public slots:
+    void updateData(const DetectionResult& result);
+};
+```
+
+### Шаг 2: Добавить в CMakeLists.txt
+
+```cmake
+# В цели ddos_monitor:
+add_executable(ddos_monitor
+    # ... существующие ...
+    src/monitor_ui/MyNewWidget.cpp
+)
+```
+
+### Шаг 3: Подключить к DataBridge
+
+```cpp
+// В MainWindow::setupConnections():
+connect(dataBridge_, &DataBridge::realtimeStatsReceived,
+        myNewWidget_, &MyNewWidget::updateData);
+```
+
+### Шаг 4: Добавить в DashboardWidget или стек страниц
+
+```cpp
+// В DashboardWidget::setupAnalytics() или в monitor_main.cpp:
+stackedWidget_->addWidget(myNewWidget_);
+```
+
+---
+
+## 6. Работа с базой данных
+
+### Добавление новой таблицы
+
+```cpp
+// src/common/DatabaseManager.cpp → DatabaseManager::ensureTables()
+tx.exec(R"(
+    CREATE TABLE IF NOT EXISTS my_new_table (
+        id         SERIAL PRIMARY KEY,
+        session_id INT REFERENCES sessions(id),
+        timestamp  TIMESTAMP DEFAULT NOW(),
+        my_field   TEXT
+    )
+)");
+```
+
+### Добавление async записи
+
+```cpp
+// 1. Объявить очередь и структуру в DatabaseManager.hpp:
+struct MyEntry { int sessionId; QString myField; QDateTime timestamp; };
+moodycamel::ConcurrentQueue<MyEntry> myQueue_;
+
+// 2. Метод enqueue:
+void enqueueMyEvent(int sessionId, const QString& field) {
+    myQueue_.enqueue({sessionId, field, QDateTime::currentDateTime()});
+}
+
+// 3. Метод flush (вызывать из flushEvents или создать отдельный):
+void flushMyEvents(pqxx::connection& conn) {
+    MyEntry entry;
+    std::vector<MyEntry> batch;
+    while (myQueue_.try_dequeue(entry)) {
+        batch.push_back(entry);
+        if ((int)batch.size() >= MAX_EVENTS_PER_FLUSH) break;
+    }
+    if (!batch.empty()) {
+        pqxx::work tx(conn);
+        auto stream = pqxx::stream_to::table(tx, {"my_new_table"},
+            {"session_id", "timestamp", "my_field"});
+        for (auto& e : batch) {
+            stream << std::make_tuple(e.sessionId, toTimestampStr(e.timestamp),
+                                      e.myField.toStdString());
+        }
+        stream.complete();
+        tx.commit();
+    }
+}
+```
+
+---
+
+## 7. Добавление ML-модели
+
+### Требования к ONNX-модели
+
+- Входной тензор: `float32`, shape `[1, N]` где N = количество признаков
+- Выходных тензора: 2
+  - `output_label`: `int64`, shape `[1]` — предсказанный класс (0 или 1)
+  - `output_probability`: `float32`, shape `[1, 2]` — вероятности классов
+
+### Конвертация модели из scikit-learn
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from skl2onnx import convert_sklearn
+from skl2onnx.common.data_types import FloatTensorType
+
+model = RandomForestClassifier(n_estimators=100)
+model.fit(X_train, y_train)
+
+initial_type = [('float_input', FloatTensorType([None, X_train.shape[1]]))]
+onnx_model = convert_sklearn(model, initial_types=initial_type,
+                              target_opset=12)
+
+with open("models/rf_model.onnx", "wb") as f:
+    f.write(onnx_model.SerializeToString())
+```
+
+### Проверка модели
+
+```powershell
+# Запустить коллектор с новой моделью
+.\ddos_collector.exe -i "WiFi" --model models/new_model.onnx
+# Следить за логом ddos_collector.log
+```
+
+---
+
+## 8. Отладка и профилирование
+
+### Режим Debug
+
+```powershell
+cmake --build build_msvc --config Debug
+.\build_msvc\Debug\ddos_collector.exe -i "WiFi" -m models/rf_model.onnx
+```
+
+### Просмотр логов
+
+```powershell
+# Collector лог
+Get-Content ddos_collector.log -Tail 50 -Wait
+
+# Monitor лог
+Get-Content ddos_monitor.log -Tail 50 -Wait
+```
+
+### Проверка очереди
+
+```cpp
+// В inferenceLoop():
+AppLogger::get()->debug("Queue size: {}, Dropped: {}",
+    monitor_.queueSize(), monitor_.droppedPackets());
+```
+
+### Запуск unit-тестов
+
+```powershell
+cd build_msvc
+ctest -C Release --output-on-failure
+```
+
+---
+
+## 9. Контрольный список перед Pull Request
+
+- [ ] Код компилируется без предупреждений (`/W4`)
+- [ ] Unit тесты проходят (`ctest -C Release`)
+- [ ] Нет сырых `new`/`delete` без парного умного указателя
+- [ ] Потокобезопасность проверена (lock-free для горячего цикла)
+- [ ] `config.json` не содержит реальных паролей
+- [ ] Документация обновлена (если изменился интерфейс)
+- [ ] Признаки ML (если изменены) синхронизированы с scaler JSON
+
+---
+
+## 10. Полезные ресурсы
+
+| Ресурс | URL |
+|---|---|
+| PcapPlusPlus Docs | https://pcapplusplus.github.io/docs/ |
+| ONNX Runtime C++ API | https://onnxruntime.ai/docs/api/c/ |
+| libpqxx Docs | https://pqxx.org/libpqxx/html/ |
+| Qt 6 Docs | https://doc.qt.io/qt-6/ |
+| moodycamel Queue | https://github.com/cameron314/concurrentqueue |
+| spdlog | https://github.com/gabime/spdlog |
+| CICIDS2017 Dataset | https://www.unb.ca/cic/datasets/ids-2017.html |
