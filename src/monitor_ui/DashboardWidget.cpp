@@ -1,3 +1,16 @@
+/**
+ * @file DashboardWidget.cpp
+ * @brief Главная панель мониторинга (реализация).
+ *
+ * Назначение: Реализация методов визуализации трафика и управления состоянием интерфейса.
+ * Входные данные: Статистические показатели в формате DetectionResult.
+ * Результаты: Динамическое обновление графиков, таблиц и индикаторов.
+ * Метод решения: Использование сигнально-слотовой архитектуры Qt для обработки потока данных.
+ * Программист: Дерюга А.А.
+ * Дата написания: 26.05.2026
+ * Версия: 1.0
+ */
+
 #include "monitor_ui/DashboardWidget.hpp"
 #include <QGridLayout>
 #include <QGroupBox>
@@ -408,7 +421,7 @@ DashboardWidget::DashboardWidget(QWidget* parent) : QWidget(parent) {
     setupUI();
     metricsTimer_ = new QTimer(this);
     connect(metricsTimer_, &QTimer::timeout, this, &DashboardWidget::updateSystemMetrics);
-    metricsTimer_->start(2000);
+    metricsTimer_->start(1000);
     autoScrollTimer_ = new QTimer(this);
     autoScrollTimer_->setSingleShot(true);
     connect(autoScrollTimer_, &QTimer::timeout, [this]() { userInteracting_ = false; });

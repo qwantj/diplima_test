@@ -94,7 +94,7 @@ moodycamel::BlockingConcurrentQueue   ← lock-free, до 500 000 пакетов
        │ dequeuePacket()
        ▼
 DetectionEngine::inferenceLoop()
-       │ каждые 2 секунды:
+       │ каждые 1 секунда:
        ▼
 FeatureExtractor::computeNormalizedFeatures()   → вектор 8 признаков
        │
@@ -188,8 +188,8 @@ TcpServer::commandReceived(cmd, data)
 
 ```
 Collector → Monitor:
-  stats    [каждые 2 сек]  — полная телеметрия окна
-  snapshot [каждые 2 сек]  — лёгкий снимок (pps, label)
+  stats    [каждые 1 сек]  — полная телеметрия окна
+  snapshot [каждые 1 сек]  — лёгкий снимок (pps, label)
   notify                   — события: replay_started/done, live_resumed
 
 Monitor → Collector (CMD):
@@ -223,7 +223,7 @@ Monitor → Collector (CMD):
 
 - **Пропускная способность:** до 130 000+ пакетов/сек на стандартном ПК (Core i7, 16GB RAM).
 - **Задержка инференса:** < 1 мс для RF, < 0.5 мс для MLP (CPU mode).
-- **Окно инференса:** 2 секунды (configurable через `config.json` → `ml.window_sec`).
+- **Окно инференса:** 1 секунда (configurable через `config.json` → `ml.window_sec`).
 - **Очередь:** до 500 000 пакетов в памяти (`network.max_queue_size`).
 - **Запись в БД:** асинхронная, батчами через `COPY` (pqxx::stream_to), не блокирует inference поток.
 

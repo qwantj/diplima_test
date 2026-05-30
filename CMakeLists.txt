@@ -170,6 +170,9 @@ add_custom_command(TARGET ddos_collector POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_CURRENT_SOURCE_DIR}/config.json"
         "$<TARGET_FILE_DIR:ddos_collector>/config.json"
+    # --- Cleanup conflicting Npcap/WinPcap DLLs ---
+    COMMAND ${CMAKE_COMMAND} -E remove -f "$<TARGET_FILE_DIR:ddos_collector>/wpcap.dll"
+    COMMAND ${CMAKE_COMMAND} -E remove -f "$<TARGET_FILE_DIR:ddos_collector>/packet.dll"
 )
 
 add_custom_command(TARGET ddos_monitor POST_BUILD

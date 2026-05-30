@@ -1,3 +1,16 @@
+/**
+ * @file monitor_main.cpp
+ * @brief Точка входа подсистемы ddos_monitor.
+ *
+ * Назначение: Инициализация графического интерфейса пользователя и настройка связей с коллектором.
+ * Входные данные: Параметры конфигурации из config.json.
+ * Результаты: Отображение рабочего стола оператора безопасности.
+ * Метод решения: Использование QApplication и QMainWindow для построения интерактивного интерфейса на Qt6.
+ * Программист: Дерюга А.А.
+ * Дата написания: 26.05.2026
+ * Версия: 1.0
+ */
+
 #include <QApplication>
 #include <QMainWindow>
 #include <QStackedWidget>
@@ -31,461 +44,389 @@
 #include "monitor_ui/EventHistoryWidget.hpp"
 #include "monitor_ui/ThemePalette.hpp"
 
+// Перечисление иконок боковой панели
 enum class SidebarIcon {
-    Dashboard,
-    DeepAnalytics,
-    EventLog,
-    SecurityIncidents,
-    SessionsHistory
+  Dashboard,
+  DeepAnalytics,
+  EventLog,
+  SecurityIncidents,
+  SessionsHistory
 };
 
+/**
+ * @class MainWindow
+ * @brief Главное окно приложения мониторинга.
+ */
 class MainWindow : public QMainWindow {
-    Q_OBJECT
+  Q_OBJECT
 public:
-    explicit MainWindow(QWidget* parent = nullptr);
+  explicit MainWindow(QWidget* parent = nullptr);
 
 private slots:
-    void onCollectorStatusChanged(bool connected);
-    void onDatabaseStatusChanged(bool connected);
-    void onSessionSelected(int sessionId);
-    void pollSessions();
+  // Обработчики изменения статуса соединений
+  void onCollectorStatusChanged(bool connected);
+  void onDatabaseStatusChanged(bool connected);
+  void onSessionSelected(int sessionId);
+  void pollSessions();
 
 private:
-    void setupUI();
-    void setupConnections();
-    void setupSystemTray();
+  void setupUI();
+  void setupConnections();
+  void setupSystemTray();
 
-    DataBridge*          dataBridge_ = nullptr;
-    DashboardWidget*     dashboardWidget_ = nullptr;
-    LogWidget*           logWidget_ = nullptr;
-    SessionWidget*       sessionWidget_ = nullptr;
-    EventHistoryWidget*  eventHistoryWidget_ = nullptr;
+  // Основные виджеты интерфейса
+  DataBridge*          dataBridge_ = nullptr;
+  DashboardWidget*     dashboardWidget_ = nullptr;
+  LogWidget*           logWidget_ = nullptr;
+  SessionWidget*       sessionWidget_ = nullptr;
+  EventHistoryWidget*  eventHistoryWidget_ = nullptr;
 
-    QLabel* dbDot_ = nullptr;
-    QLabel* dbTxt_ = nullptr;
+  QLabel* dbDot_ = nullptr;
+  QLabel* dbTxt_ = nullptr;
 
-    QStackedWidget* stackedWidget_ = nullptr;
-    QListWidget*    sidebarList_ = nullptr;
+  QStackedWidget* stackedWidget_ = nullptr;
+  QListWidget*    sidebarList_ = nullptr;
 
-    QSystemTrayIcon* trayIcon_ = nullptr;
-    QMenu*           trayMenu_ = nullptr;
-    QAction*         pauseAction_ = nullptr;
-    QTimer*          sessionPollTimer_ = nullptr;
+  QSystemTrayIcon* trayIcon_ = nullptr;
+  QMenu*           trayMenu_ = nullptr;
+  QAction*         pauseAction_ = nullptr;
+  QTimer*          sessionPollTimer_ = nullptr;
 
-    QIcon            iconNormal_;
-    QIcon            iconAttack_;
+  QIcon            iconNormal_;
+  QIcon            iconAttack_;
 };
 
 #include <QToolTip>
 #include <QMouseEvent>
 
+/**
+ * @class RightClickToolTipFilter
+ * @brief Фильтр событий для отображения подсказок по правой кнопке мыши.
+ */
 class RightClickToolTipFilter : public QObject {
 public:
-    explicit RightClickToolTipFilter(QObject* parent = nullptr) : QObject(parent) {}
+  explicit RightClickToolTipFilter(QObject* parent = nullptr) : QObject(parent) {}
 protected:
-    bool eventFilter(QObject* obj, QEvent* event) override {
-        if (event->type() == QEvent::MouseButtonPress) {
-            auto* mouseEvent = static_cast<QMouseEvent*>(event);
-            if (mouseEvent->button() == Qt::RightButton) {
-                auto* widget = qobject_cast<QWidget*>(obj);
-                if (widget && !widget->toolTip().isEmpty()) {
-                    QToolTip::showText(mouseEvent->globalPosition().toPoint(), widget->toolTip(), widget);
-                    return true;
-                }
-            }
+  bool eventFilter(QObject* obj, QEvent* event) override {
+    if (event->type() == QEvent::MouseButtonPress) {
+      auto* mouseEvent = static_cast<QMouseEvent*>(event);
+      if (mouseEvent->button() == Qt::RightButton) {
+        auto* widget = qobject_cast<QWidget*>(obj);
+        if (widget && !widget->toolTip().isEmpty()) {
+          QToolTip::showText(mouseEvent->globalPosition().toPoint(), widget->toolTip(), widget);
+          return true;
         }
-        return QObject::eventFilter(obj, event);
+      }
     }
+    return QObject::eventFilter(obj, event);
+  }
 };
 
+// Конструктор главного окна
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
-    qApp->installEventFilter(new RightClickToolTipFilter(this));
+  qApp->installEventFilter(new RightClickToolTipFilter(this));
 
-    setWindowTitle("DDoS Dashboard");
-    resize(1280, 800);
+  setWindowTitle("DDoS Dashboard - Система мониторинга");
+  resize(1280, 800);
 
-    // Load configuration
-    AppConfig config;
-    ConfigManager::load("config.json", config);
+  // Загрузка настроек
+  AppConfig config;
+  ConfigManager::load("config.json", config);
 
-    // Prepare icons
-    iconNormal_ = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
-    QPixmap attackPixmap(32, 32);
-    attackPixmap.fill(Qt::transparent);
-    {
-        QPainter p(&attackPixmap);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setBrush(QColor("#f38ba8")); // Red
-        p.setPen(Qt::NoPen);
-        p.drawEllipse(2, 2, 28, 28);
-        p.setPen(QPen(Qt::white, 3));
-        p.drawLine(10, 10, 22, 22);
-        p.drawLine(10, 22, 22, 10);
-    }
-    iconAttack_ = QIcon(attackPixmap);
+  // Подготовка иконок состояния (норма/атака)
+  iconNormal_ = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
+  QPixmap attackPixmap(32, 32);
+  attackPixmap.fill(Qt::transparent);
+  {
+    QPainter p(&attackPixmap);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(QColor("#f38ba8")); 
+    p.setPen(Qt::NoPen);
+    p.drawEllipse(2, 2, 28, 28);
+    p.setPen(QPen(Qt::white, 3));
+    p.drawLine(10, 10, 22, 22);
+    p.drawLine(10, 22, 22, 10);
+  }
+  iconAttack_ = QIcon(attackPixmap);
 
-    setupUI();
-    setupSystemTray();
+  setupUI();           // Построение интерфейса
+  setupSystemTray();   // Настройка трея
 
-    // Data bridge
-    dataBridge_ = new DataBridge(this);
-    setupConnections();
+  // Инициализация моста данных
+  dataBridge_ = new DataBridge(this);
+  setupConnections();
 
-    // Connect using config
-    dataBridge_->connectToCollector(QString::fromStdString(config.collectorHost), config.tcpPort);
-    dataBridge_->connectToDatabase(QString::fromStdString(config.dbHost), config.dbPort,
-                                   QString::fromStdString(config.dbName),
-                                   QString::fromStdString(config.dbUser),
-                                   QString::fromStdString(config.dbPass));
+  // Автоматическое подключение согласно конфигу
+  dataBridge_->connectToCollector(QString::fromStdString(config.collectorHost), config.tcpPort);
+  dataBridge_->connectToDatabase(QString::fromStdString(config.dbHost), config.dbPort,
+                   QString::fromStdString(config.dbName),
+                   QString::fromStdString(config.dbUser),
+                   QString::fromStdString(config.dbPass));
 
-    // Session poll timer
-    sessionPollTimer_ = new QTimer(this);
-    connect(sessionPollTimer_, &QTimer::timeout, this, &MainWindow::pollSessions);
-    sessionPollTimer_->start(10000);
-    QTimer::singleShot(1000, this, &MainWindow::pollSessions);
+  // Таймер опроса списка сессий
+  sessionPollTimer_ = new QTimer(this);
+  connect(sessionPollTimer_, &QTimer::timeout, this, &MainWindow::pollSessions);
+  sessionPollTimer_->start(10000);
+  QTimer::singleShot(1000, this, &MainWindow::pollSessions);
 }
 
+/**
+ * @brief Настройка элементов управления и макета окна.
+ */
 void MainWindow::setupUI() {
-    auto* centralWidget = new QWidget(this);
-    auto* mainLayout = new QVBoxLayout(centralWidget);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(0);
+  auto* centralWidget = new QWidget(this);
+  auto* mainLayout = new QVBoxLayout(centralWidget);
+  mainLayout->setContentsMargins(0, 0, 0, 0);
+  mainLayout->setSpacing(0);
 
-    // Green Header Bar
-    auto* headerBar = new QWidget();
-    headerBar->setFixedHeight(3);
-    headerBar->setStyleSheet(QString("background: %1;").arg(ThemePalette::green().name()));
-    mainLayout->addWidget(headerBar);
+  // Верхняя статусная полоса (зеленая)
+  auto* headerBar = new QWidget();
+  headerBar->setFixedHeight(3);
+  headerBar->setStyleSheet(QString("background: %1;").arg(ThemePalette::green().name()));
+  mainLayout->addWidget(headerBar);
 
-    auto* contentLayout = new QHBoxLayout();
-    contentLayout->setContentsMargins(0, 0, 0, 0);
-    contentLayout->setSpacing(0);
-    mainLayout->addLayout(contentLayout);
+  auto* contentLayout = new QHBoxLayout();
+  contentLayout->setContentsMargins(0, 0, 0, 0);
+  contentLayout->setSpacing(0);
+  mainLayout->addLayout(contentLayout);
 
-    // Sidebar
-    sidebarList_ = new QListWidget();
-    sidebarList_->setFixedWidth(185);
-    sidebarList_->setProperty("cssClass", "sidebarList");
-    sidebarList_->setIconSize(QSize(22, 22));
+  // Боковая панель навигации (Sidebar)
+  sidebarList_ = new QListWidget();
+  sidebarList_->setFixedWidth(185);
+  sidebarList_->setProperty("cssClass", "sidebarList");
+  sidebarList_->setIconSize(QSize(22, 22));
 
-    auto addSidebarItem = [this](const QString& text, const QColor& color, SidebarIcon iconType, const QString& tooltip) {
-        auto* item = new QListWidgetItem(sidebarList_);
-        QPixmap pixmap(24, 24);
-        pixmap.fill(Qt::transparent);
-        QPainter p(&pixmap);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setBrush(color);
-        p.setPen(Qt::NoPen);
+  // Лямбда для быстрого добавления пунктов меню
+  auto addSidebarItem = [this](const QString& text, const QColor& color, SidebarIcon iconType, const QString& tooltip) {
+    auto* item = new QListWidgetItem(sidebarList_);
+    QPixmap pixmap(24, 24);
+    pixmap.fill(Qt::transparent);
+    QPainter p(&pixmap);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(color);
+    p.setPen(Qt::NoPen);
 
-        switch (iconType) {
-            case SidebarIcon::Dashboard:
-                p.drawRoundedRect(2, 2, 8, 8, 2, 2); p.drawRoundedRect(12, 2, 8, 8, 2, 2);
-                p.drawRoundedRect(2, 12, 8, 8, 2, 2); p.setBrush(QColor(80, 80, 80)); p.drawRoundedRect(12, 12, 8, 8, 2, 2);
-                break;
-            case SidebarIcon::DeepAnalytics:
-                p.setPen(QPen(color, 2)); p.setBrush(Qt::NoBrush);
-                p.drawLine(4, 18, 8, 10); p.drawLine(8, 10, 14, 14); p.drawLine(14, 14, 20, 4);
-                break;
-            case SidebarIcon::EventLog:
-                p.drawRoundedRect(5, 2, 14, 20, 2, 2); p.setBrush(QColor(30, 30, 30));
-                p.drawRect(8, 8, 8, 2); p.drawRect(8, 12, 8, 2); p.drawRect(8, 16, 5, 2);
-                break;
-            case SidebarIcon::SecurityIncidents: {
-                QPainterPath path; path.moveTo(12, 2); path.lineTo(20, 5); path.lineTo(20, 12);
-                path.quadTo(20, 20, 12, 22); path.quadTo(4, 20, 4, 12); path.lineTo(4, 5); path.closeSubpath();
-                p.drawPath(path);
-                break;
-            }
-            case SidebarIcon::SessionsHistory:
-                p.drawRoundedRect(4, 4, 4, 4, 1, 1); p.drawRect(10, 5, 10, 2);
-                p.drawRoundedRect(4, 10, 4, 4, 1, 1); p.drawRect(10, 11, 10, 2);
-                p.drawRoundedRect(4, 16, 4, 4, 1, 1); p.drawRect(10, 17, 10, 2);
-                break;
-        }
-        item->setIcon(QIcon(pixmap));
-        item->setText("  " + text);
-        item->setToolTip(tooltip);
-        sidebarList_->addItem(item);
-    };
+    // Отрисовка стилизованных иконок через QPainter
+    switch (iconType) {
+      case SidebarIcon::Dashboard:
+        p.drawRoundedRect(2, 2, 8, 8, 2, 2); p.drawRoundedRect(12, 2, 8, 8, 2, 2);
+        p.drawRoundedRect(2, 12, 8, 8, 2, 2); p.setBrush(QColor(80, 80, 80)); p.drawRoundedRect(12, 12, 8, 8, 2, 2);
+        break;
+      case SidebarIcon::DeepAnalytics:
+        p.setPen(QPen(color, 2)); p.setBrush(Qt::NoBrush);
+        p.drawLine(4, 18, 8, 10); p.drawLine(8, 10, 14, 14); p.drawLine(14, 14, 20, 4);
+        break;
+      case SidebarIcon::EventLog:
+        p.drawRoundedRect(5, 2, 14, 20, 2, 2); p.setBrush(QColor(30, 30, 30));
+        p.drawRect(8, 8, 8, 2); p.drawRect(8, 12, 8, 2); p.drawRect(8, 16, 5, 2);
+        break;
+      case SidebarIcon::SecurityIncidents: {
+        QPainterPath path; path.moveTo(12, 2); path.lineTo(20, 5); path.lineTo(20, 12);
+        path.quadTo(20, 20, 12, 22); path.quadTo(4, 20, 4, 12); path.lineTo(4, 5); path.closeSubpath();
+        p.drawPath(path);
+        break;
+      }
+      case SidebarIcon::SessionsHistory:
+        p.drawRoundedRect(4, 4, 4, 4, 1, 1); p.drawRect(10, 5, 10, 2);
+        p.drawRoundedRect(4, 10, 4, 4, 1, 1); p.drawRect(10, 11, 10, 2);
+        p.drawRoundedRect(4, 16, 4, 4, 1, 1); p.drawRect(10, 17, 10, 2);
+        break;
+    }
+    item->setIcon(QIcon(pixmap));
+    item->setText("  " + text);
+    item->setToolTip(tooltip);
+    sidebarList_->addItem(item);
+  };
 
-    addSidebarItem("Dashboard", ThemePalette::green(), SidebarIcon::Dashboard, "Главная панель: Общее состояние и основные графики");
-    addSidebarItem("Deep Analytics", ThemePalette::blue(), SidebarIcon::DeepAnalytics, "Глубокая аналитика: Топология сети, SLO и распределение трафика");
-    addSidebarItem("Event Log", ThemePalette::peach(), SidebarIcon::EventLog, "Лог событий: Подробный список всех классифицированных потоков");
-    addSidebarItem("Security Incidents", ThemePalette::blue(), SidebarIcon::SecurityIncidents, "Инциденты безопасности: История обнаруженных атак с таймлайном");
-    addSidebarItem("Sessions History", ThemePalette::mauve(), SidebarIcon::SessionsHistory, "История сессий: Список всех прошлых запусков системы");
-    
-    sidebarList_->setCurrentRow(0);
-    contentLayout->addWidget(sidebarList_);
+  // Наполнение меню
+  addSidebarItem("Обзор", ThemePalette::green(), SidebarIcon::Dashboard, "Главная панель: Общее состояние и основные графики");
+  addSidebarItem("Аналитика", ThemePalette::blue(), SidebarIcon::DeepAnalytics, "Глубокая аналитика: Топология сети и распределение трафика");
+  addSidebarItem("Лог событий", ThemePalette::peach(), SidebarIcon::EventLog, "Подробный список всех классифицированных потоков");
+  addSidebarItem("Инциденты", ThemePalette::blue(), SidebarIcon::SecurityIncidents, "История обнаруженных атак");
+  addSidebarItem("История сессий", ThemePalette::mauve(), SidebarIcon::SessionsHistory, "Список всех прошлых запусков системы");
+  
+  sidebarList_->setCurrentRow(0);
+  contentLayout->addWidget(sidebarList_);
 
-    stackedWidget_ = new QStackedWidget();
-    dashboardWidget_ = new DashboardWidget();
-    logWidget_ = new LogWidget();
-    sessionWidget_ = new SessionWidget();
-    eventHistoryWidget_ = new EventHistoryWidget();
+  // Стек виджетов для переключения страниц
+  stackedWidget_ = new QStackedWidget();
+  dashboardWidget_ = new DashboardWidget();
+  logWidget_ = new LogWidget();
+  sessionWidget_ = new SessionWidget();
+  eventHistoryWidget_ = new EventHistoryWidget();
 
-    stackedWidget_->addWidget(dashboardWidget_);                     // 0: Dashboard = Overview (Global State)
-    stackedWidget_->addWidget(dashboardWidget_->getTabAnalytics());  // 1: Deep Analytics = Infrastructure Health
-    stackedWidget_->addWidget(logWidget_);
-    stackedWidget_->addWidget(eventHistoryWidget_);
-    stackedWidget_->addWidget(sessionWidget_);
+  stackedWidget_->addWidget(dashboardWidget_);
+  stackedWidget_->addWidget(dashboardWidget_->getTabAnalytics());
+  stackedWidget_->addWidget(logWidget_);
+  stackedWidget_->addWidget(eventHistoryWidget_);
+  stackedWidget_->addWidget(sessionWidget_);
 
-    contentLayout->addWidget(stackedWidget_, 1);
-    connect(sidebarList_, &QListWidget::currentRowChanged, stackedWidget_, &QStackedWidget::setCurrentIndex);
-    setCentralWidget(centralWidget);
+  contentLayout->addWidget(stackedWidget_, 1);
+  connect(sidebarList_, &QListWidget::currentRowChanged, stackedWidget_, &QStackedWidget::setCurrentIndex);
+  setCentralWidget(centralWidget);
 
-    auto* toolbar = addToolBar("Main");
-    toolbar->setMovable(false);
+  // Панель инструментов (Toolbar)
+  auto* toolbar = addToolBar("Main");
+  toolbar->setMovable(false);
 
-    auto* openPcapBtn = new QPushButton("Открыть PCAP");
-    openPcapBtn->setProperty("cssClass", "toolbarBtnYellow");
-    connect(openPcapBtn, &QPushButton::clicked, [this]() {
-        QString path = QFileDialog::getOpenFileName(this, "Open PCAP", "", "PCAP files (*.pcap *.pcapng)");
-        if (!path.isEmpty()) {
-            nlohmann::json data; data["path"] = path.toStdString();
-            dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_PCAP, data);
-        }
-    });
-    toolbar->addWidget(openPcapBtn);
+  auto* openPcapBtn = new QPushButton("Открыть PCAP");
+  openPcapBtn->setProperty("cssClass", "toolbarBtnYellow");
+  connect(openPcapBtn, &QPushButton::clicked, [this]() {
+    QString path = QFileDialog::getOpenFileName(this, "Открыть PCAP", "", "PCAP файлы (*.pcap *.pcapng)");
+    if (!path.isEmpty()) {
+      nlohmann::json data; data["path"] = path.toStdString();
+      dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_PCAP, data);
+    }
+  });
+  toolbar->addWidget(openPcapBtn);
 
-    // Кнопка возврата к live трафику (п.9)
-    auto* liveReturnBtn = new QPushButton("⏹ Live");
-    liveReturnBtn->setToolTip("Вернуться к live-трафику от коллектора");
-    liveReturnBtn->setProperty("cssClass", "toolbarBtnGreen");
-    connect(liveReturnBtn, &QPushButton::clicked, [this]() {
-        // Отправляем команду остановить replay и вернуться к live
-        nlohmann::json data; data["action"] = "stop_replay";
-        dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_PCAP, data);
-    });
-    toolbar->addWidget(liveReturnBtn);
+  auto* liveReturnBtn = new QPushButton("⏹ Live");
+  liveReturnBtn->setToolTip("Вернуться к живому трафику");
+  liveReturnBtn->setProperty("cssClass", "toolbarBtnGreen");
+  connect(liveReturnBtn, &QPushButton::clicked, [this]() {
+    nlohmann::json data; data["action"] = "stop_replay";
+    dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_PCAP, data);
+  });
+  toolbar->addWidget(liveReturnBtn);
 
-    auto* recordBtn = new QPushButton("⏺ Запись");
-    recordBtn->setCheckable(true);
-    recordBtn->setToolTip("Включить/выключить сохранение PCAP-дампов трафика");
-    
-    recordBtn->setProperty("cssClass", "toolbarBtnPeach");
-    
-    connect(recordBtn, &QPushButton::toggled, [this, recordBtn](bool checked) {
-        if (checked) {
-            recordBtn->setText("⏹ Стоп");
-            recordBtn->setProperty("cssClass", "toolbarBtnRed");
-        } else {
-            recordBtn->setText("⏺ Запись");
-            recordBtn->setProperty("cssClass", "toolbarBtnPeach");
-        }
-        recordBtn->style()->unpolish(recordBtn);
-        recordBtn->style()->polish(recordBtn);
-        dataBridge_->sendDumpConfig(checked);
-    });
-    toolbar->addWidget(recordBtn);
+  auto* recordBtn = new QPushButton("⏺ Запись");
+  recordBtn->setCheckable(true);
+  recordBtn->setToolTip("Сохранение дампов трафика на диск");
+  recordBtn->setProperty("cssClass", "toolbarBtnPeach");
+  
+  connect(recordBtn, &QPushButton::toggled, [this, recordBtn](bool checked) {
+    if (checked) {
+      recordBtn->setText("⏹ Стоп");
+      recordBtn->setProperty("cssClass", "toolbarBtnRed");
+    } else {
+      recordBtn->setText("⏺ Запись");
+      recordBtn->setProperty("cssClass", "toolbarBtnPeach");
+    }
+    recordBtn->style()->unpolish(recordBtn); recordBtn->style()->polish(recordBtn);
+    dataBridge_->sendDumpConfig(checked);
+  });
+  toolbar->addWidget(recordBtn);
 
-    auto* folderBtn = new QPushButton("📂");
-    folderBtn->setProperty("cssClass", "toolbarBtnYellow");
-    toolbar->addWidget(folderBtn);
+  toolbar->addSeparator();
+  toolbar->addWidget(new QLabel(" Модель: "));
+  
+  auto* modelCombo = new QComboBox();
+  QDir modelsDir("models");
+  QStringList modelFiles = modelsDir.entryList(QStringList() << "*.onnx", QDir::Files);
+  if (modelFiles.isEmpty()) modelFiles << "xgb_model.onnx" << "rf_model.onnx" << "mlp_model.onnx";
+  modelCombo->addItems(modelFiles);
+  connect(modelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, modelCombo](int idx) {
+    QString modelName = modelCombo->itemText(idx);
+    nlohmann::json data; data["path"] = std::string("models/") + modelName.toStdString();
+    dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_MODEL, data);
+  });
+  toolbar->addWidget(modelCombo);
 
-    toolbar->addSeparator();
-    auto* modelLbl = new QLabel(" Model: "); 
-    toolbar->addWidget(modelLbl);
-    
-    auto* modelCombo = new QComboBox();
-    QDir modelsDir("models");
-    QStringList modelFiles = modelsDir.entryList(QStringList() << "*.onnx", QDir::Files);
-    if (modelFiles.isEmpty()) modelFiles << "rf_model.onnx" << "mlp_model.onnx";
-    modelCombo->addItems(modelFiles);
-    connect(modelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this, modelCombo](int idx) {
-        QString modelName = modelCombo->itemText(idx);
-        nlohmann::json data; data["path"] = std::string("models/") + modelName.toStdString();
-        dataBridge_->tcpClient()->sendCommand(Protocol::CMD_LOAD_MODEL, data);
-    });
-    toolbar->addWidget(modelCombo);
+  // Индикаторы статуса
+  toolbar->addSeparator();
+  auto* dbIndicator = new QWidget(); auto* dbLayout = new QHBoxLayout(dbIndicator);
+  dbLayout->setContentsMargins(0, 0, 0, 0); dbLayout->setSpacing(8);
+  dbDot_ = new QLabel("●"); dbDot_->setProperty("cssClass", "statusLabelRed");
+  dbTxt_ = new QLabel("БД: Выкл"); dbTxt_->setProperty("cssClass", "statusLabelText");
+  dbLayout->addWidget(dbDot_); dbLayout->addWidget(dbTxt_);
+  toolbar->addWidget(dbIndicator);
 
-    toolbar->addSeparator();
-    auto* dbIndicator = new QWidget(); auto* dbLayout = new QHBoxLayout(dbIndicator);
-    dbLayout->setContentsMargins(0, 0, 0, 0); dbLayout->setSpacing(8);
-    dbDot_ = new QLabel("●"); dbDot_->setProperty("cssClass", "statusLabelRed");
-    dbTxt_ = new QLabel("DB: Disconnected"); dbTxt_->setProperty("cssClass", "statusLabelText");
-    dbDot_->setToolTip("Статус подключения к базе данных PostgreSQL");
-    dbTxt_->setToolTip("Статус подключения к базе данных PostgreSQL");
-    dbLayout->addWidget(dbDot_); dbLayout->addWidget(dbTxt_);
-    toolbar->addWidget(dbIndicator);
+  auto* spacer = new QWidget(); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+  toolbar->addWidget(spacer);
 
-    toolbar->addSeparator();
-    auto* liveIndicator = new QWidget(); auto* liveLayout = new QHBoxLayout(liveIndicator);
-    liveLayout->setContentsMargins(0, 0, 0, 0); liveLayout->setSpacing(8);
-    auto* dot = new QLabel("●"); dot->setProperty("cssClass", "statusLabelGreen");
-    auto* txt = new QLabel("Live"); txt->setProperty("cssClass", "statusLabelText");
-    liveLayout->addWidget(dot); liveLayout->addWidget(txt);
-    toolbar->addWidget(liveIndicator);
+  auto* themeCombo = new QComboBox();
+  themeCombo->addItems({"Темная", "Светлая"});
+  connect(themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
+    dashboardWidget_->applyTheme(idx == 0 ? ThemeMode::Dark : ThemeMode::Light);
+  });
+  toolbar->addWidget(themeCombo);
 
-    auto* spacer = new QWidget(); spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    toolbar->addWidget(spacer);
-
-    auto* themeLbl = new QLabel("Theme:");
-    toolbar->addWidget(themeLbl);
-    auto* themeCombo = new QComboBox();
-    themeCombo->addItems({"Dark", "Light"});
-    connect(themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int idx) {
-        ThemeMode mode = idx == 0 ? ThemeMode::Dark : ThemeMode::Light;
-        dashboardWidget_->applyTheme(mode);
-    });
-    toolbar->addWidget(themeCombo);
-
-    setStatusBar(nullptr);
-    ThemePalette::apply(ThemeMode::Dark);
+  ThemePalette::apply(ThemeMode::Dark);
 }
 
+/**
+ * @brief Установка соединений между мостом данных и виджетами.
+ */
 void MainWindow::setupConnections() {
-    // Connection status
-    connect(dataBridge_, &DataBridge::collectorConnectionChanged,
-            this, &MainWindow::onCollectorStatusChanged);
-    connect(dataBridge_, &DataBridge::databaseConnectionChanged,
-            this, &MainWindow::onDatabaseStatusChanged);
+  connect(dataBridge_, &DataBridge::collectorConnectionChanged, this, &MainWindow::onCollectorStatusChanged);
+  connect(dataBridge_, &DataBridge::databaseConnectionChanged, this, &MainWindow::onDatabaseStatusChanged);
 
-    // Realtime data
-    connect(dataBridge_, &DataBridge::realtimeStatsReceived,
-            dashboardWidget_, &DashboardWidget::updateRealtime);
-    connect(dataBridge_, &DataBridge::realtimeStatsReceived,
-        [this](const DetectionResult& r, uint64_t) {
-            logWidget_->addEvent(r);
-            
-            // Update tray icon based on status
-            if (r.label == 1) {
-                trayIcon_->setIcon(iconAttack_);
-                trayIcon_->setToolTip("DDoS Monitor - ATTACK DETECTED!");
-            } else {
-                trayIcon_->setIcon(iconNormal_);
-                trayIcon_->setToolTip("DDoS Monitor - Normal");
-            }
-        });
-    connect(dataBridge_, &DataBridge::realtimeSnapshotReceived,
-            dashboardWidget_, &DashboardWidget::updateSnapshot);
+  // Передача оперативных данных на графики
+  connect(dataBridge_, &DataBridge::realtimeStatsReceived, dashboardWidget_, &DashboardWidget::updateRealtime);
+  connect(dataBridge_, &DataBridge::realtimeStatsReceived, [this](const DetectionResult& r, uint64_t) {
+    logWidget_->addEvent(r);
+    // Обновление иконки трея в зависимости от наличия атаки
+    trayIcon_->setIcon(r.label == 1 ? iconAttack_ : iconNormal_);
+  });
 
-    // Historical data
-    connect(dataBridge_, &DataBridge::historicalStatsReceived,
-            dashboardWidget_, &DashboardWidget::loadHistory);
-    connect(dataBridge_, &DataBridge::historicalStatsReceived,
-            logWidget_, &LogWidget::loadHistory);
-
-    // Notifications
-    connect(dataBridge_, &DataBridge::notificationReceived,
-        [this](const QString& event, const QJsonObject& data) {
-            if (event == "replay_done") {
-                if (trayIcon_)
-                    trayIcon_->showMessage("DDoS Monitor", "Pcap replay completed.",
-                        QSystemTrayIcon::Information, 3000);
-            } else if (event == "replay_started") {
-                AppLogger::get()->info("Replay started. Clearing dashboard.");
-                dashboardWidget_->loadHistory({}); // Clear charts
-                logWidget_->loadHistory({});       // Clear log
-            } else if (event == "live_resumed") {
-                int sid = data.value("session_id").toInt();
-                if (sid > 0) {
-                    AppLogger::get()->info("Live resumed. Reloading session {}", sid);
-                    onSessionSelected(sid);
-                }
-            }
-        });
-
-    // BPF toggle
-    connect(dashboardWidget_, &DashboardWidget::bpfToggled,
-            dataBridge_, &DataBridge::sendBpfConfig);
-    
-    // PCAP Toggle
-    connect(dashboardWidget_, &DashboardWidget::pcapToggled,
-            dataBridge_, &DataBridge::sendDumpConfig);
-
-    // Session selected
-    connect(sessionWidget_, &SessionWidget::sessionSelected,
-            this, &MainWindow::onSessionSelected);
+  // Загрузка истории сессии
+  connect(sessionWidget_, &SessionWidget::sessionSelected, this, &MainWindow::onSessionSelected);
 }
 
+// Настройка системного трея
 void MainWindow::setupSystemTray() {
-    trayIcon_ = new QSystemTrayIcon(this);
-    trayIcon_->setIcon(iconNormal_);
-    trayIcon_->setToolTip("DDoS Monitor");
+  trayIcon_ = new QSystemTrayIcon(this);
+  trayIcon_->setIcon(iconNormal_);
+  trayIcon_->setToolTip("DDoS Monitor");
 
-    trayMenu_ = new QMenu(this);
-    auto* expandAction = trayMenu_->addAction("Expand Dashboard");
-    connect(expandAction, &QAction::triggered, this, &MainWindow::showNormal);
+  trayMenu_ = new QMenu(this);
+  trayMenu_->addAction("Развернуть", this, &MainWindow::showNormal);
+  trayMenu_->addSeparator();
+  trayMenu_->addAction("Выход", qApp, &QCoreApplication::quit);
 
-    trayMenu_->addSeparator();
-    pauseAction_ = trayMenu_->addAction("Pause Monitoring");
-    pauseAction_->setCheckable(true);
-    connect(pauseAction_, &QAction::toggled, [this](bool paused) {
-        AppLogger::get()->info("Monitoring {}", paused ? "paused" : "resumed");
-    });
-
-    auto* exitAction = trayMenu_->addAction("Exit");
-    connect(exitAction, &QAction::triggered, qApp, &QCoreApplication::quit);
-
-    trayIcon_->setContextMenu(trayMenu_);
-    trayIcon_->show();
-
-    connect(trayIcon_, &QSystemTrayIcon::activated, [this](QSystemTrayIcon::ActivationReason reason) {
-        if (reason == QSystemTrayIcon::Trigger) {
-            if (isVisible()) hide(); else { show(); raise(); activateWindow(); }
-        }
-    });
+  trayIcon_->setContextMenu(trayMenu_);
+  trayIcon_->show();
 }
 
 void MainWindow::onCollectorStatusChanged(bool connected) {
-    dashboardWidget_->updateConnectionStatus(connected);
+  dashboardWidget_->updateConnectionStatus(connected);
 }
 
 void MainWindow::onDatabaseStatusChanged(bool connected) {
-    if (dbDot_ && dbTxt_) {
-        if (connected) {
-            dbDot_->setProperty("cssClass", "statusLabelGreen");
-            dbTxt_->setText("DB: Connected");
-        } else {
-            dbDot_->setProperty("cssClass", "statusLabelRed");
-            dbTxt_->setText("DB: Disconnected");
-        }
-        dbDot_->style()->unpolish(dbDot_); dbDot_->style()->polish(dbDot_);
-        dbTxt_->style()->unpolish(dbTxt_); dbTxt_->style()->polish(dbTxt_);
-    }
-
-    if (connected) {
-        eventHistoryWidget_->setDatabaseManager(dataBridge_->databaseManager());
-        pollSessions();
-    }
+  if (dbDot_ && dbTxt_) {
+    dbDot_->setProperty("cssClass", connected ? "statusLabelGreen" : "statusLabelRed");
+    dbTxt_->setText(connected ? "БД: Подключено" : "БД: Ошибка");
+    dbDot_->style()->unpolish(dbDot_); dbDot_->style()->polish(dbDot_);
+    dbTxt_->style()->unpolish(dbTxt_); dbTxt_->style()->polish(dbTxt_);
+  }
+  if (connected) {
+    eventHistoryWidget_->setDatabaseManager(dataBridge_->databaseManager());
+    pollSessions();
+  }
 }
 
 void MainWindow::onSessionSelected(int sessionId) {
-    if (!dataBridge_->databaseManager()) return;
-    auto events = dataBridge_->databaseManager()->getEventsForSession(sessionId);
-    dashboardWidget_->loadHistory(events);
-    logWidget_->loadHistory(events);
-    sidebarList_->setCurrentRow(0); // switch to dashboard
+  if (!dataBridge_->databaseManager()) return;
+  auto events = dataBridge_->databaseManager()->getEventsForSession(sessionId);
+  dashboardWidget_->loadHistory(events);
+  logWidget_->loadHistory(events);
+  sidebarList_->setCurrentRow(0);
 }
 
 void MainWindow::pollSessions() {
-    if (dataBridge_->databaseManager() && dataBridge_->databaseManager()->isConnected()) {
-        auto sessions = dataBridge_->databaseManager()->getSessions();
-        sessionWidget_->loadSessions(sessions);
-    }
+  if (dataBridge_->databaseManager() && dataBridge_->databaseManager()->isConnected()) {
+    auto sessions = dataBridge_->databaseManager()->getSessions();
+    sessionWidget_->loadSessions(sessions);
+  }
 }
 
-// Must include MOC for MainWindow defined in .cpp
 #include "monitor_main.moc"
 
 int main(int argc, char* argv[]) {
-    QApplication app(argc, argv);
-    app.setApplicationName("ddos_monitor");
-    app.setApplicationVersion("2.2");
-    app.setOrganizationName("DiplomDDoS");
+  QApplication app(argc, argv);
+  app.setApplicationName("ddos_monitor");
+  app.setApplicationVersion("2.2");
 
-    AppLogger::init("ddos_monitor.log");
+  AppLogger::init("ddos_monitor.log");
 
-    // Register meta types
-    qRegisterMetaType<DetectionResult>();
-    qRegisterMetaType<std::vector<DetectionResult>>();
-    qRegisterMetaType<SessionInfo>();
-    qRegisterMetaType<std::vector<SessionInfo>>();
-    qRegisterMetaType<std::vector<QByteArray>>();
-    qRegisterMetaType<ThemeMode>();
+  // Регистрация типов данных для сигналов
+  qRegisterMetaType<DetectionResult>();
+  qRegisterMetaType<std::vector<DetectionResult>>();
+  qRegisterMetaType<SessionInfo>();
+  qRegisterMetaType<ThemeMode>();
 
-    MainWindow w;
-    w.show();
+  MainWindow w;
+  w.show();
 
-    return app.exec();
+  return app.exec();
 }

@@ -63,7 +63,7 @@ public:
     FeatureExtractor& featureExtractor();
     ModelInferencer&  modelInferencer();
 
-    static constexpr double INFERENCE_WINDOW_SEC = 2.0;
+    static constexpr double INFERENCE_WINDOW_SEC = 1.0;
     static constexpr double NOISE_THRESHOLD_PPS  = 50.0;
 };
 ```
@@ -71,7 +71,7 @@ public:
 #### Алгоритм работы `inferenceLoop()`
 
 1. Сбрасываем `FeatureExtractor::reset()`.
-2. В течение `INFERENCE_WINDOW_SEC` (2 с) читаем пакеты из очереди `TrafficMonitor`.
+2. В течение `INFERENCE_WINDOW_SEC` (1 с) читаем пакеты из очереди `TrafficMonitor`.
 3. Каждый пакет обрабатывается `FeatureExtractor::processPacket()`.
 4. По истечении окна вызываем `processWindow()`.
 5. Если PPS < `NOISE_THRESHOLD_PPS` (50) → label=0, confidence=0 (нет шума).
@@ -436,7 +436,7 @@ struct AppConfig {
 
     std::string defaultModel = "models/rf_model.onnx";
     std::string defaultEp    = "cpu";
-    double      inferenceWindowSec = 2.0;
+    double      inferenceWindowSec = 1.0;
 
     std::string defaultInterface = "";
     int         maxQueueSize     = 500000;

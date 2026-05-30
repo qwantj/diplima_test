@@ -26,7 +26,7 @@
 [info] DetectionEngine: initialized with model 'rf_model.onnx', EP=cpu
 [info] TcpServer: listening on 127.0.0.1:50050
 [info] Successfully connected to PostgreSQL database: ddos_detection_db
-[info] DetectionEngine: inference loop started (window=2s)
+[info] DetectionEngine: inference loop started (window=1s)
 ```
 
 ### Шаг 2: Запуск монитора

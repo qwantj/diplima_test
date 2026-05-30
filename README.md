@@ -167,7 +167,7 @@ CREATE DATABASE ddos_detection_db;
     "ml": {
         "default_model": "models/rf_model.onnx",
         "default_ep": "cpu",
-        "window_sec": 2.0
+        "window_sec": 1.0
     },
     "network": {
         "default_interface": "",
